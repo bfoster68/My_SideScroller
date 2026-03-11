@@ -1,7 +1,10 @@
 mod animation;
 mod audio;
 mod camera;
+mod collectibles;
 mod constants;
+mod enemies;
+mod hazards;
 mod health;
 mod hud;
 mod level;
@@ -33,6 +36,9 @@ fn main() {
         .add_plugins(animation::AnimationPlugin)
         .add_plugins(parallax::ParallaxPlugin)
         // .add_plugins(particles::ParticlesPlugin)
+        .add_plugins(enemies::EnemiesPlugin)
+        .add_plugins(collectibles::CollectiblesPlugin)
+        .add_plugins(hazards::HazardsPlugin)
         .add_plugins(audio::GameAudioPlugin)
         .run();
 }

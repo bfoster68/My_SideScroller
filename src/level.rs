@@ -1,7 +1,10 @@
 use bevy::prelude::*;
 use rand::Rng;
 
+use crate::collectibles::{spawn_coin, spawn_coin_at, Coin};
 use crate::constants::*;
+use crate::enemies::{spawn_enemy, Enemy};
+use crate::hazards::{spawn_spike, Spike};
 use crate::state::GameState;
 
 #[derive(Component)]
@@ -141,6 +144,27 @@ pub fn generate_platforms(mut commands: Commands) {
 
         spawn_platform(&mut commands, new_x, new_y, width, PLATFORM_HEIGHT, color, false);
 
+        // Decide what to place on this platform (mutually exclusive)
+        let roll: f64 = rng.gen();
+        if roll < 0.25 && width >= ENEMY_WIDTH * 2.5 {
+            // 25% chance: enemy (only on platforms wide enough to patrol)
+            spawn_enemy(&mut commands, new_x, new_y, width);
+        } else if roll < 0.40 {
+            // 15% chance: spike
+            spawn_spike(&mut commands, new_x, new_y);
+        } else if roll < 0.75 {
+            // 35% chance: coin
+            spawn_coin(&mut commands, new_x, new_y);
+        }
+        // else 25%: bare platform
+
+        // Occasionally spawn a mid-air coin between platforms
+        if i > 0 && rng.gen_bool(0.3) {
+            let mid_x = (prev_x + new_x) / 2.0;
+            let mid_y = ((prev_y + new_y) / 2.0) + 40.0;
+            spawn_coin_at(&mut commands, mid_x, mid_y);
+        }
+
         prev_x = new_x;
         prev_y = new_y;
     }
@@ -151,6 +175,9 @@ fn regenerate_level(
     keyboard: Res<ButtonInput<KeyCode>>,
     platform_query: Query<Entity, With<Platform>>,
     decor_query: Query<Entity, With<PlatformDecor>>,
+    enemy_query: Query<Entity, With<Enemy>>,
+    coin_query: Query<Entity, With<Coin>>,
+    spike_query: Query<Entity, With<Spike>>,
 ) {
     if !keyboard.just_pressed(KeyCode::KeyR) {
         return;
@@ -160,6 +187,15 @@ fn regenerate_level(
         commands.entity(entity).despawn();
     }
     for entity in &decor_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in &enemy_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in &coin_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in &spike_query {
         commands.entity(entity).despawn();
     }
 

@@ -6,6 +6,10 @@ use crate::health::Health;
 use crate::level::{Platform, PlatformSize};
 use crate::state::GameState;
 
+/// System set for player movement — other modules can schedule `.after(PlayerMovementSet)`.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PlayerMovementSet;
+
 #[derive(Component)]
 pub struct Player;
 
@@ -56,6 +60,7 @@ impl Plugin for PlayerPlugin {
                     respawn_on_fall,
                 )
                     .chain()
+                    .in_set(PlayerMovementSet)
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(OnEnter(GameState::GameOver), reset_player_on_game_over);

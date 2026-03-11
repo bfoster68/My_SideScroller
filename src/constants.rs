@@ -50,3 +50,27 @@ pub const PARTICLE_COUNT_LAND: usize = 10;
 pub const PARTICLE_SPEED: f32 = 150.0;
 pub const PARTICLE_SIZE: f32 = 4.0;
 pub const PARTICLE_GRAVITY: f32 = -400.0;
+
+// Enemies
+pub const ENEMY_WIDTH: f32 = 40.0;
+pub const ENEMY_HEIGHT: f32 = 48.0;
+pub const ENEMY_SPEED: f32 = 80.0;
+pub const ENEMY_STOMP_BOUNCE: f32 = 400.0;
+pub const ENEMY_STOMP_THRESHOLD: f32 = 0.4;
+pub const ENEMY_KILL_SCORE: u32 = 100;
+pub const ENEMY_Z: f32 = 0.8;
+
+// Collectibles
+pub const COIN_SIZE: f32 = 20.0;
+pub const COIN_BOB_AMPLITUDE: f32 = 6.0;
+pub const COIN_BOB_SPEED: f32 = 3.0;
+pub const COIN_SPIN_SPEED: f32 = 4.0;
+pub const COIN_SCORE: u32 = 10;
+pub const COIN_FLOAT_HEIGHT: f32 = 40.0;
+pub const COIN_Z: f32 = 0.6;
+
+// Hazards
+pub const SPIKE_WIDTH: f32 = 24.0;
+pub const SPIKE_HEIGHT: f32 = 20.0;
+pub const SPIKE_DAMAGE: i32 = 1;
+pub const SPIKE_Z: f32 = 0.7;
