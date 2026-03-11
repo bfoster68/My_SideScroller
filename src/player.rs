@@ -50,7 +50,10 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Score>()
             .init_resource::<Coins>()
-            .add_systems(OnEnter(GameState::Playing), spawn_player_if_missing)
+            .add_systems(
+                Update,
+                spawn_player_if_missing.run_if(in_state(GameState::Playing)),
+            )
             .add_systems(
                 Update,
                 (
@@ -241,14 +244,19 @@ fn apply_velocity(
         let overlap_y = (player_half_h + plat_half_h)
             - (transform.translation.y - plat_tf.translation.y).abs();
 
-        if overlap_x > 0.0 && overlap_y > 0.0 {
-            if transform.translation.y > plat_tf.translation.y {
+        // Use a small epsilon so the player stays grounded when sitting
+        // exactly on top of a platform (overlap_y == 0.0 after snap).
+        if overlap_x > 0.0 && overlap_y >= -0.5 {
+            if overlap_y <= 0.0 && transform.translation.y > plat_tf.translation.y {
+                // Resting exactly on top — just mark grounded, no position correction.
+                grounded.on_ground = true;
+            } else if overlap_y > 0.0 && transform.translation.y > plat_tf.translation.y {
                 // Landing on top
                 transform.translation.y =
                     plat_tf.translation.y + plat_half_h + player_half_h;
                 velocity.0.y = 0.0;
                 grounded.on_ground = true;
-            } else {
+            } else if overlap_y > 0.0 {
                 // Bonking head on bottom
                 transform.translation.y =
                     plat_tf.translation.y - plat_half_h - player_half_h;

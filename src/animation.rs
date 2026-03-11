@@ -71,24 +71,24 @@ fn load_sprite_sheets(
     asset_server: Res<AssetServer>,
     mut layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
-    // Idle: 6 frames @ 97x182 (cropped)
-    let idle_layout = TextureAtlasLayout::from_grid(UVec2::new(97, 182), 6, 1, None, None);
+    // Idle: 6 frames @ 89x182
+    let idle_layout = TextureAtlasLayout::from_grid(UVec2::new(89, 182), 6, 1, None, None);
     let idle = AnimSheet {
         image: asset_server.load("sprites/idle.png"),
         layout: layouts.add(idle_layout),
         frame_count: 6,
     };
 
-    // Run: 6 frames @ 131x175 (cropped)
-    let run_layout = TextureAtlasLayout::from_grid(UVec2::new(131, 175), 6, 1, None, None);
+    // Run: 6 frames @ 123x175
+    let run_layout = TextureAtlasLayout::from_grid(UVec2::new(123, 175), 6, 1, None, None);
     let run = AnimSheet {
         image: asset_server.load("sprites/run.png"),
         layout: layouts.add(run_layout),
         frame_count: 6,
     };
 
-    // Jump: 7 frames @ 134x197 (per-frame cropped, first ~4 = rising, last ~3 = falling)
-    let jump_layout = TextureAtlasLayout::from_grid(UVec2::new(134, 197), 7, 1, None, None);
+    // Jump: 7 frames @ 126x197 (first ~4 = rising, last ~3 = falling)
+    let jump_layout = TextureAtlasLayout::from_grid(UVec2::new(126, 197), 7, 1, None, None);
     let jump = AnimSheet {
         image: asset_server.load("sprites/jump.png"),
         layout: layouts.add(jump_layout),
