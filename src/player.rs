@@ -88,18 +88,20 @@ fn spawn_player_if_missing(
 
     let Some(sheets) = sheets else { return };
 
+    // Use from_atlas_image + transform scale (struct literal Sprite doesn't render atlas correctly)
+    let scale_x = PLAYER_WIDTH / sheets.idle.frame_size.x;
+    let scale_y = PLAYER_HEIGHT / sheets.idle.frame_size.y;
     commands
         .spawn((
-            Sprite {
-                image: sheets.idle.image.clone(),
-                custom_size: Some(Vec2::new(PLAYER_WIDTH, PLAYER_HEIGHT)),
-                texture_atlas: Some(TextureAtlas {
+            Sprite::from_atlas_image(
+                sheets.idle.image.clone(),
+                TextureAtlas {
                     layout: sheets.idle.layout.clone(),
                     index: 0,
-                }),
-                ..default()
-            },
-            Transform::from_xyz(SPAWN_X, SPAWN_Y, 1.0),
+                },
+            ),
+            Transform::from_xyz(SPAWN_X, SPAWN_Y, 1.0)
+                .with_scale(Vec3::new(scale_x, scale_y, 1.0)),
             Player,
             Velocity(Vec2::ZERO),
             Grounded {

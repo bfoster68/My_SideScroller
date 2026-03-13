@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 
+use crate::constants::*;
 use crate::player::{Grounded, Player, Sliding, Velocity};
 use crate::health::{DeathTimer, HurtTimer};
 use crate::state::GameState;
@@ -52,6 +53,8 @@ pub struct AnimSheet {
     pub image: Handle<Image>,
     pub layout: Handle<TextureAtlasLayout>,
     pub frame_count: usize,
+    /// Width/height of a single frame in pixels (for computing scale).
+    pub frame_size: Vec2,
 }
 
 pub struct AnimationPlugin;
@@ -84,6 +87,7 @@ fn load_sprite_sheets(
         image: asset_server.load("sprites/idle.png"),
         layout: layouts.add(idle_layout),
         frame_count: 6,
+        frame_size: Vec2::new(89.0, 182.0),
     };
 
     // Run: 6 frames @ 123x175
@@ -92,6 +96,7 @@ fn load_sprite_sheets(
         image: asset_server.load("sprites/run.png"),
         layout: layouts.add(run_layout),
         frame_count: 6,
+        frame_size: Vec2::new(123.0, 175.0),
     };
 
     // Jump: 7 frames @ 126x197 (first ~4 = rising, last ~3 = falling)
@@ -100,6 +105,7 @@ fn load_sprite_sheets(
         image: asset_server.load("sprites/jump.png"),
         layout: layouts.add(jump_layout),
         frame_count: 7,
+        frame_size: Vec2::new(126.0, 197.0),
     };
 
     // Hurt: 3 frames @ 131x181
@@ -108,6 +114,7 @@ fn load_sprite_sheets(
         image: asset_server.load("sprites/hurt.png"),
         layout: layouts.add(hurt_layout),
         frame_count: 3,
+        frame_size: Vec2::new(131.0, 181.0),
     };
 
     // Faint: 7 frames @ 175x181
@@ -116,6 +123,7 @@ fn load_sprite_sheets(
         image: asset_server.load("sprites/faint.png"),
         layout: layouts.add(faint_layout),
         frame_count: 7,
+        frame_size: Vec2::new(175.0, 181.0),
     };
 
     // Slide: 7 frames @ 400x157
@@ -124,6 +132,7 @@ fn load_sprite_sheets(
         image: asset_server.load("sprites/slide.png"),
         layout: layouts.add(slide_layout),
         frame_count: 7,
+        frame_size: Vec2::new(400.0, 157.0),
     };
 
     commands.insert_resource(SpriteSheets {
@@ -204,13 +213,16 @@ fn swap_sprite_sheet(
             &PlayerAnimState,
             &mut CurrentAnim,
             &mut Sprite,
+            &mut Transform,
             &mut AnimationTimer,
         ),
         With<Player>,
     >,
 ) {
     let Some(sheets) = sheets else { return };
-    let Ok((anim_state, mut current, mut sprite, mut anim_timer)) = query.single_mut() else {
+    let Ok((anim_state, mut current, mut sprite, mut transform, mut anim_timer)) =
+        query.single_mut()
+    else {
         return;
     };
 
@@ -235,6 +247,10 @@ fn swap_sprite_sheet(
         atlas.index = start_frame;
     }
     current.0 = *anim_state;
+
+    // Update scale to keep the player at PLAYER_WIDTH x PLAYER_HEIGHT
+    transform.scale.x = PLAYER_WIDTH / sheet.frame_size.x;
+    transform.scale.y = PLAYER_HEIGHT / sheet.frame_size.y;
 
     // Reset the animation timer
     anim_timer.timer.reset();
