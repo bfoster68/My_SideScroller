@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use crate::animation::{AnimationTimer, CurrentAnim, FacingDirection, PlayerAnimState, SpriteSheets};
 use crate::constants::*;
 use crate::health::Health;
-use crate::level::{Platform, PlatformSize};
+use crate::level::{ChunkTracker, Difficulty, Platform, PlatformSize};
 use crate::state::GameState;
 
 /// System set for player movement — other modules can schedule `.after(PlayerMovementSet)`.
@@ -271,6 +271,7 @@ fn respawn_on_fall(
         (&mut Transform, &mut Velocity, &mut Grounded, &mut JumpCounter),
         With<Player>,
     >,
+    camera_query: Query<&Transform, (With<Camera2d>, Without<Player>)>,
 ) {
     let Ok((mut transform, mut velocity, mut grounded, mut jump_counter)) =
         query.single_mut()
@@ -279,7 +280,12 @@ fn respawn_on_fall(
     };
 
     if transform.translation.y < FALL_LIMIT {
-        transform.translation.x = SPAWN_X;
+        // Respawn near the camera position so the player stays in the action
+        let respawn_x = camera_query
+            .single()
+            .map(|c| c.translation.x)
+            .unwrap_or(SPAWN_X);
+        transform.translation.x = respawn_x;
         transform.translation.y = SPAWN_Y;
         velocity.0 = Vec2::ZERO;
         grounded.on_ground = true;
@@ -301,6 +307,8 @@ fn reset_player_on_game_over(
     >,
     mut score: ResMut<Score>,
     mut coins: ResMut<Coins>,
+    mut chunk_tracker: ResMut<ChunkTracker>,
+    mut difficulty: ResMut<Difficulty>,
 ) {
     let Ok((mut transform, mut velocity, mut grounded, mut jump_counter, mut health)) =
         query.single_mut()
@@ -317,4 +325,6 @@ fn reset_player_on_game_over(
     health.current = health.max;
     score.value = 0;
     coins.count = 0;
+    *chunk_tracker = ChunkTracker::default();
+    difficulty.value = 0.0;
 }
