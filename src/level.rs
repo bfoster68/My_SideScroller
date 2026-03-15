@@ -3,9 +3,10 @@ use rand::Rng;
 
 use crate::collectibles::{spawn_coin, spawn_coin_at, spawn_coin_on_moving, Coin};
 use crate::constants::*;
-use crate::enemies::{spawn_enemy, spawn_enemy_on_moving, Enemy};
-use crate::hazards::{spawn_spike, spawn_spike_on_moving, Spike};
+use crate::enemies::{spawn_enemy, spawn_enemy_on_moving, spawn_flying_enemy, spawn_shooter_enemy, Enemy, Projectile};
+use crate::hazards::{spawn_lava, spawn_saw, spawn_saw_on_moving, spawn_spike, spawn_spike_on_moving, Lava, Saw, Spike};
 use crate::player::{PlayerMovementSet, Score};
+use crate::powerups::{spawn_powerup, PowerupKind};
 use crate::state::GameState;
 
 #[derive(Component)]
@@ -85,6 +86,10 @@ fn reset_level_if_needed(
     enemy_query: Query<Entity, With<Enemy>>,
     coin_query: Query<Entity, With<Coin>>,
     spike_query: Query<Entity, With<Spike>>,
+    saw_query: Query<Entity, (With<Saw>, Without<Platform>)>,
+    lava_query: Query<Entity, With<Lava>>,
+    projectile_query: Query<Entity, With<Projectile>>,
+    powerup_query: Query<Entity, With<PowerupKind>>,
 ) {
     // Only reset if there are already platforms (coming from GameOver).
     // On first play from Menu, there will be none, and chunks will generate naturally.
@@ -103,6 +108,18 @@ fn reset_level_if_needed(
         commands.entity(entity).despawn();
     }
     for entity in &spike_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in &saw_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in &lava_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in &projectile_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in &powerup_query {
         commands.entity(entity).despawn();
     }
 
@@ -168,6 +185,9 @@ fn generate_chunks(
                 ground_color,
                 true,
             );
+        } else {
+            // Fill ground gap with lava
+            spawn_lava(&mut commands, seg_x, GROUND_SEGMENT_WIDTH);
         }
 
         tracker.rightmost_ground_x += GROUND_SEGMENT_WIDTH;
@@ -217,11 +237,17 @@ fn generate_chunks(
 
             // Spawn occupants as children so they move with the platform
             let roll: f64 = rng.gen();
+            let saw_chance = spike_chance * 0.5;
+            let spike_remaining = spike_chance - saw_chance;
             if roll < enemy_chance && width >= ENEMY_WIDTH * 2.5 {
                 commands.entity(plat_entity).with_children(|parent| {
                     spawn_enemy_on_moving(parent, width);
                 });
-            } else if roll < enemy_chance + spike_chance {
+            } else if roll < enemy_chance + saw_chance && width >= SAW_SIZE * 3.0 {
+                commands.entity(plat_entity).with_children(|parent| {
+                    spawn_saw_on_moving(parent, width);
+                });
+            } else if roll < enemy_chance + saw_chance + spike_remaining {
                 commands.entity(plat_entity).with_children(|parent| {
                     spawn_spike_on_moving(parent);
                 });
@@ -243,12 +269,29 @@ fn generate_chunks(
 
             // Decide what to place on this platform
             let roll: f64 = rng.gen();
-            if roll < enemy_chance && width >= ENEMY_WIDTH * 2.5 {
+            let saw_chance = spike_chance * 0.5;
+            let spike_remaining = spike_chance - saw_chance;
+            // Split enemy budget: 72% walking, 18% flying, 10% shooter
+            let walking_chance = enemy_chance * 0.72;
+            let flying_chance = enemy_chance * 0.18;
+            let shooter_chance = enemy_chance * 0.10;
+            if roll < walking_chance && width >= ENEMY_WIDTH * 2.5 {
                 spawn_enemy(&mut commands, new_x, new_y, width);
-            } else if roll < enemy_chance + spike_chance {
+            } else if roll < walking_chance + flying_chance {
+                spawn_flying_enemy(&mut commands, new_x, new_y);
+            } else if roll < walking_chance + flying_chance + shooter_chance {
+                spawn_shooter_enemy(&mut commands, new_x, new_y);
+            } else if roll < enemy_chance + saw_chance && width >= SAW_SIZE * 3.0 {
+                spawn_saw(&mut commands, new_x, new_y, width);
+            } else if roll < enemy_chance + saw_chance + spike_remaining {
                 spawn_spike(&mut commands, new_x, new_y);
             } else if roll < enemy_chance + spike_chance + coin_chance {
-                spawn_coin(&mut commands, new_x, new_y);
+                // Small chance to spawn a power-up instead of a coin
+                if rng.gen_bool(POWERUP_SPAWN_CHANCE) {
+                    spawn_powerup(&mut commands, new_x, new_y);
+                } else {
+                    spawn_coin(&mut commands, new_x, new_y);
+                }
             }
         }
 
@@ -340,6 +383,10 @@ fn despawn_behind_camera(
             With<Enemy>,
             With<Coin>,
             With<Spike>,
+            With<Saw>,
+            With<Lava>,
+            With<Projectile>,
+            With<PowerupKind>,
         )>,
     >,
 ) {

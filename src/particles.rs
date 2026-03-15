@@ -31,6 +31,7 @@ impl Plugin for ParticlesPlugin {
                 (
                     detect_jump_particles,
                     detect_land_particles,
+                    run_dust_while_running,
                     update_particles,
                 )
                     .chain()

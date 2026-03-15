@@ -1,7 +1,9 @@
 use bevy::prelude::*;
 
+use crate::animation::PlayerAnimState;
 use crate::constants::*;
 use crate::player::Player;
+use crate::powerups::Shield;
 use crate::state::GameState;
 
 /// Tracks player health and lives.
@@ -36,6 +38,12 @@ pub struct DamageEvent {
 #[derive(Message)]
 pub struct PlayerDeathEvent;
 
+/// Attached to the player during the death animation to delay the GameOver transition.
+#[derive(Component)]
+pub struct DeathTimer {
+    pub timer: Timer,
+}
+
 pub struct HealthPlugin;
 
 impl Plugin for HealthPlugin {
@@ -44,7 +52,7 @@ impl Plugin for HealthPlugin {
             .add_message::<PlayerDeathEvent>()
             .add_systems(
                 Update,
-                (apply_damage, tick_invincibility, flash_invincible)
+                (apply_damage, tick_death_animation, tick_invincibility, flash_invincible)
                     .chain()
                     .run_if(in_state(GameState::Playing)),
             );
@@ -56,12 +64,21 @@ fn apply_damage(
     mut commands: Commands,
     mut damage_events: MessageReader<DamageEvent>,
     mut death_events: MessageWriter<PlayerDeathEvent>,
-    mut query: Query<(Entity, &mut Health, Option<&Invincible>), With<Player>>,
-    mut next_state: ResMut<NextState<GameState>>,
+    mut query: Query<
+        (Entity, &mut Health, Option<&Invincible>, Option<&DeathTimer>, Option<&mut Shield>),
+        With<Player>,
+    >,
 ) {
-    let Ok((entity, mut health, invincible)) = query.single_mut() else {
+    let Ok((entity, mut health, invincible, death_timer, mut shield)) = query.single_mut()
+    else {
         return;
     };
+
+    // Already dying — ignore further damage
+    if death_timer.is_some() {
+        for _ in damage_events.read() {}
+        return;
+    }
 
     for event in damage_events.read() {
         // Can't take damage while invincible
@@ -69,17 +86,56 @@ fn apply_damage(
             continue;
         }
 
+        // Shield absorbs the hit
+        if let Some(ref mut s) = shield {
+            s.hits_remaining -= 1;
+            if s.hits_remaining <= 0 {
+                commands.entity(entity).remove::<Shield>();
+            }
+            continue;
+        }
+
         health.current = (health.current - event.amount).max(0);
 
         if health.current <= 0 {
             death_events.write(PlayerDeathEvent);
-            next_state.set(GameState::GameOver);
+            // Start death animation instead of immediate GameOver
+            commands.entity(entity).insert((
+                DeathTimer {
+                    timer: Timer::from_seconds(DEATH_ANIM_DURATION, TimerMode::Once),
+                },
+                PlayerAnimState::Death,
+            ));
         } else {
             // Grant invincibility frames
             commands.entity(entity).insert(Invincible {
                 timer: Timer::from_seconds(INVINCIBILITY_DURATION, TimerMode::Once),
             });
         }
+    }
+}
+
+/// Tick the death timer, fade the player out, then transition to GameOver.
+fn tick_death_animation(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut DeathTimer, &mut Sprite), With<Player>>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    let Ok((entity, mut death, mut sprite)) = query.single_mut() else {
+        return;
+    };
+
+    death.timer.tick(time.delta());
+
+    // Fade out over the death duration
+    let alpha = death.timer.fraction_remaining();
+    sprite.color = sprite.color.with_alpha(alpha);
+
+    if death.timer.is_finished() {
+        commands.entity(entity).remove::<DeathTimer>();
+        sprite.color = sprite.color.with_alpha(1.0);
+        next_state.set(GameState::GameOver);
     }
 }
 

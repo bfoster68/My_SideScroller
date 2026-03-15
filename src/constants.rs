@@ -47,6 +47,11 @@ pub const MAX_JUMP_HEIGHT: f32 = 130.0;
 pub const CAMERA_LERP_SPEED: f32 = 0.1;
 pub const CAMERA_Y_OFFSET: f32 = 50.0;
 
+// Screen shake
+pub const SHAKE_MAX_OFFSET: f32 = 8.0;
+pub const SHAKE_DECAY: f32 = 3.0;
+pub const SHAKE_TRAUMA_ON_HIT: f32 = 0.5;
+
 // Coyote time
 pub const COYOTE_TIME: f32 = 0.1;
 
@@ -77,6 +82,23 @@ pub const ENEMY_STOMP_THRESHOLD: f32 = 0.4;
 pub const ENEMY_KILL_SCORE: u32 = 100;
 pub const ENEMY_Z: f32 = 0.8;
 
+// Flying enemy
+pub const FLYING_ENEMY_SIZE: f32 = 36.0;
+pub const FLYING_ENEMY_AMPLITUDE: f32 = 40.0;
+pub const FLYING_ENEMY_FREQUENCY: f32 = 2.0;
+pub const FLYING_ENEMY_Z: f32 = 0.8;
+
+// Shooter enemy
+pub const SHOOTER_WIDTH: f32 = 40.0;
+pub const SHOOTER_HEIGHT: f32 = 48.0;
+pub const SHOOTER_FIRE_INTERVAL: f32 = 2.0;
+pub const PROJECTILE_SPEED: f32 = 200.0;
+pub const PROJECTILE_SIZE: f32 = 8.0;
+pub const PROJECTILE_DAMAGE: i32 = 1;
+pub const PROJECTILE_Z: f32 = 0.75;
+pub const PROJECTILE_LIFETIME: f32 = 4.0;
+pub const SHOOTER_Z: f32 = 0.8;
+
 // Collectibles
 pub const COIN_SIZE: f32 = 20.0;
 pub const COIN_BOB_AMPLITUDE: f32 = 6.0;
@@ -92,8 +114,34 @@ pub const SPIKE_HEIGHT: f32 = 20.0;
 pub const SPIKE_DAMAGE: i32 = 1;
 pub const SPIKE_Z: f32 = 0.7;
 
+// Moving saw
+pub const SAW_SIZE: f32 = 32.0;
+pub const SAW_SPEED: f32 = 120.0;
+pub const SAW_DAMAGE: i32 = 1;
+pub const SAW_Z: f32 = 0.75;
+
+// Lava
+pub const LAVA_HEIGHT: f32 = 30.0;
+pub const LAVA_DAMAGE: i32 = 999; // instant kill
+pub const LAVA_Z: f32 = 0.3;
+
 // High score
 pub const HIGHSCORE_FILE: &str = "highscore.dat";
+
+// Death animation
+pub const DEATH_ANIM_DURATION: f32 = 0.8;
+
+// Power-ups
+pub const POWERUP_SIZE: f32 = 24.0;
+pub const POWERUP_BOB_AMPLITUDE: f32 = 5.0;
+pub const POWERUP_BOB_SPEED: f32 = 2.5;
+pub const POWERUP_Z: f32 = 0.65;
+pub const POWERUP_SPAWN_CHANCE: f64 = 0.05;
+pub const SPEED_BOOST_DURATION: f32 = 5.0;
+pub const SPEED_BOOST_MULTIPLIER: f32 = 1.5;
+pub const TRIPLE_JUMP_DURATION: f32 = 8.0;
+pub const TRIPLE_JUMP_MAX: u32 = 3;
+pub const SHIELD_HITS: i32 = 1;
 
 // Screen transitions
 pub const FADE_DURATION: f32 = 0.3;

@@ -3,9 +3,10 @@ use bevy::prelude::*;
 use crate::animation::{AnimationTimer, CurrentAnim, FacingDirection, PlayerAnimState, SpriteSheets};
 use crate::constants::*;
 use crate::enemies::Enemy;
-use crate::hazards::Spike;
-use crate::health::{Health, Invincible};
+use crate::hazards::{Lava, Saw, Spike};
+use crate::health::{DeathTimer, Health, Invincible};
 use crate::level::{Platform, PlatformSize, PlatformVelocity};
+use crate::powerups::{Shield, SpeedBoost, TripleJump};
 use crate::state::GameState;
 
 /// System set for player movement — other modules can schedule `.after(PlayerMovementSet)`.
@@ -127,15 +128,34 @@ fn player_input(
             &mut Grounded,
             &mut JumpCounter,
             &mut JumpHeld,
+            Option<&DeathTimer>,
+            Option<&SpeedBoost>,
+            Option<&TripleJump>,
         ),
         With<Player>,
     >,
 ) {
-    let Ok((mut velocity, mut grounded, mut jump_counter, mut jump_held)) =
-        query.single_mut()
+    let Ok((
+        mut velocity,
+        mut grounded,
+        mut jump_counter,
+        mut jump_held,
+        death_timer,
+        speed_boost,
+        triple_jump,
+    )) = query.single_mut()
     else {
         return;
     };
+
+    // No input during death animation
+    if death_timer.is_some() {
+        velocity.0.x = 0.0;
+        return;
+    }
+
+    // Determine speed multiplier from active power-ups
+    let speed_mult = speed_boost.map_or(1.0, |b| b.multiplier);
 
     // Horizontal movement
     let mut dir_x = 0.0;
@@ -145,12 +165,19 @@ fn player_input(
     if keyboard.pressed(KeyCode::KeyD) || keyboard.pressed(KeyCode::ArrowRight) {
         dir_x += 1.0;
     }
-    velocity.0.x = dir_x * PLAYER_SPEED;
+    velocity.0.x = dir_x * PLAYER_SPEED * speed_mult;
+
+    // Determine max jumps (triple jump power-up)
+    let max_jumps = if triple_jump.is_some() {
+        TRIPLE_JUMP_MAX
+    } else {
+        MAX_JUMPS
+    };
 
     // Coyote time — grace period after leaving a platform
     if grounded.on_ground {
         grounded.coyote_timer = COYOTE_TIME;
-        jump_counter.jumps_remaining = MAX_JUMPS;
+        jump_counter.jumps_remaining = max_jumps;
     } else {
         grounded.coyote_timer -= time.delta_secs();
     }
@@ -292,6 +319,8 @@ fn respawn_on_fall(
     >,
     enemy_query: Query<&GlobalTransform, (With<Enemy>, Without<Player>, Without<Camera2d>, Without<Platform>)>,
     spike_query: Query<&GlobalTransform, (With<Spike>, Without<Player>, Without<Camera2d>, Without<Platform>)>,
+    saw_query: Query<&GlobalTransform, (With<Saw>, Without<Player>, Without<Camera2d>, Without<Platform>)>,
+    lava_query: Query<&Transform, (With<Lava>, Without<Player>, Without<Camera2d>, Without<Platform>)>,
 ) {
     let Ok((entity, mut transform, mut velocity, mut grounded, mut jump_counter)) =
         query.single_mut()
@@ -316,7 +345,14 @@ fn respawn_on_fall(
                 && player_x > plat_tf.translation.x - plat_half_w - PLAYER_WIDTH
                 && player_x < plat_tf.translation.x + plat_half_w + PLAYER_WIDTH
         });
-        !has_platform_below
+        // Also check if lava is below — if so, let the player fall into it
+        let has_lava_below = lava_query.iter().any(|lava_tf| {
+            let lava_half_w = GROUND_SEGMENT_WIDTH / 2.0;
+            lava_tf.translation.y < player_y
+                && player_x > lava_tf.translation.x - lava_half_w
+                && player_x < lava_tf.translation.x + lava_half_w
+        });
+        !has_platform_below && !has_lava_below
     } else {
         false
     };
@@ -327,11 +363,12 @@ fn respawn_on_fall(
             .map(|c| c.translation.x)
             .unwrap_or(SPAWN_X);
 
-        // Collect all enemy and spike positions for hazard checking.
+        // Collect all enemy, spike, and saw positions for hazard checking.
         let hazard_positions: Vec<Vec2> = enemy_query
             .iter()
             .map(|t| t.translation().truncate())
             .chain(spike_query.iter().map(|t| t.translation().truncate()))
+            .chain(saw_query.iter().map(|t| t.translation().truncate()))
             .collect();
 
         // Find the nearest safe platform (no enemies or spikes on it).
@@ -387,14 +424,33 @@ fn respawn_on_fall(
 }
 
 fn reset_player_on_game_over(
-    mut query: Query<(&mut Health,), With<Player>>,
+    mut commands: Commands,
+    mut query: Query<
+        (Entity, &mut Health, &mut Sprite, &mut PlayerAnimState, &mut CurrentAnim),
+        With<Player>,
+    >,
 ) {
-    let Ok((mut health,)) = query.single_mut() else {
+    let Ok((entity, mut health, mut sprite, mut anim_state, mut current_anim)) =
+        query.single_mut()
+    else {
         return;
     };
     // Only reset health here so the player stops taking damage.
     // Everything else resets on OnEnter(Playing) so the level is ready.
     health.current = health.max;
+
+    // Reset animation from Death back to Idle
+    *anim_state = PlayerAnimState::Idle;
+    current_anim.0 = PlayerAnimState::Death; // Force swap_sprite_sheet to detect a change
+
+    // Clean up death animation and power-up state
+    commands
+        .entity(entity)
+        .remove::<DeathTimer>()
+        .remove::<SpeedBoost>()
+        .remove::<TripleJump>()
+        .remove::<Shield>();
+    sprite.color = sprite.color.with_alpha(1.0);
 }
 
 /// Reset score, coins, and player position when starting a new game.

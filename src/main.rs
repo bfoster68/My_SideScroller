@@ -10,8 +10,9 @@ mod highscore;
 mod hud;
 mod level;
 mod parallax;
-// mod particles;
+mod particles;
 mod player;
+mod powerups;
 mod state;
 mod transition;
 
@@ -37,10 +38,11 @@ fn main() {
         .add_plugins(hud::HudPlugin)
         .add_plugins(animation::AnimationPlugin)
         .add_plugins(parallax::ParallaxPlugin)
-        // .add_plugins(particles::ParticlesPlugin)
+        .add_plugins(particles::ParticlesPlugin)
         .add_plugins(enemies::EnemiesPlugin)
         .add_plugins(collectibles::CollectiblesPlugin)
         .add_plugins(hazards::HazardsPlugin)
+        .add_plugins(powerups::PowerupsPlugin)
         .add_plugins(audio::GameAudioPlugin)
         .add_plugins(highscore::HighScorePlugin)
         .add_plugins(transition::TransitionPlugin)

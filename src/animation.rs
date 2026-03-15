@@ -11,6 +11,7 @@ pub enum PlayerAnimState {
     Run,
     Jump,
     Fall,
+    Death,
 }
 
 /// Which direction the player is facing.
@@ -37,6 +38,7 @@ pub struct SpriteSheets {
     pub idle: AnimSheet,
     pub run: AnimSheet,
     pub jump: AnimSheet,
+    pub faint: AnimSheet,
     // Fall reuses the later frames of jump
 }
 
@@ -95,7 +97,15 @@ fn load_sprite_sheets(
         frame_count: 7,
     };
 
-    commands.insert_resource(SpriteSheets { idle, run, jump });
+    // Faint (death): 7 frames @ 175x181
+    let faint_layout = TextureAtlasLayout::from_grid(UVec2::new(175, 181), 7, 1, None, None);
+    let faint = AnimSheet {
+        image: asset_server.load("sprites/faint.png"),
+        layout: layouts.add(faint_layout),
+        frame_count: 7,
+    };
+
+    commands.insert_resource(SpriteSheets { idle, run, jump, faint });
 }
 
 /// Determine animation state from velocity and grounded status.
@@ -113,6 +123,11 @@ fn update_anim_state(
     let Ok((velocity, grounded, mut anim_state, mut facing)) = query.single_mut() else {
         return;
     };
+
+    // Don't override death animation
+    if *anim_state == PlayerAnimState::Death {
+        return;
+    }
 
     if velocity.0.x < -0.1 {
         *facing = FacingDirection::Left;
@@ -163,6 +178,7 @@ fn swap_sprite_sheet(
         PlayerAnimState::Run => (&sheets.run, 0),
         PlayerAnimState::Jump => (&sheets.jump, 0),
         PlayerAnimState::Fall => (&sheets.jump, 4),
+        PlayerAnimState::Death => (&sheets.faint, 0),
     };
 
     sprite.image = sheet.image.clone();
@@ -215,6 +231,12 @@ fn animate_frames(
         PlayerAnimState::Fall => {
             // Play frames 4-6, hold on last falling frame
             if atlas.index < 6 {
+                atlas.index += 1;
+            }
+        }
+        PlayerAnimState::Death => {
+            // Play through faint frames, hold on last
+            if atlas.index < sheets.faint.frame_count - 1 {
                 atlas.index += 1;
             }
         }
