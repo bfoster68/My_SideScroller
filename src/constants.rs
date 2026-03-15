@@ -10,7 +10,7 @@ pub const MAX_JUMPS: u32 = 2; // Double jump
 // Spawn / respawn
 pub const SPAWN_X: f32 = -400.0;
 pub const SPAWN_Y: f32 = -200.0;
-pub const FALL_LIMIT: f32 = -600.0;
+pub const FALL_LIMIT: f32 = -420.0;
 
 // Level generation
 pub const GROUND_Y: f32 = -300.0;
@@ -91,3 +91,9 @@ pub const SPIKE_WIDTH: f32 = 24.0;
 pub const SPIKE_HEIGHT: f32 = 20.0;
 pub const SPIKE_DAMAGE: i32 = 1;
 pub const SPIKE_Z: f32 = 0.7;
+
+// High score
+pub const HIGHSCORE_FILE: &str = "highscore.dat";
+
+// Screen transitions
+pub const FADE_DURATION: f32 = 0.3;

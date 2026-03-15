@@ -6,12 +6,14 @@ mod constants;
 mod enemies;
 mod hazards;
 mod health;
+mod highscore;
 mod hud;
 mod level;
 mod parallax;
 // mod particles;
 mod player;
 mod state;
+mod transition;
 
 use bevy::{prelude::*, window::WindowResolution};
 
@@ -40,5 +42,7 @@ fn main() {
         .add_plugins(collectibles::CollectiblesPlugin)
         .add_plugins(hazards::HazardsPlugin)
         .add_plugins(audio::GameAudioPlugin)
+        .add_plugins(highscore::HighScorePlugin)
+        .add_plugins(transition::TransitionPlugin)
         .run();
 }

@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use crate::health::Health;
+use crate::highscore::{HighScore, HighScoreSet, NewHighScoreFlag};
 use crate::player::{Coins, Player, Score};
 use crate::state::GameState;
 
@@ -44,7 +45,7 @@ impl Plugin for HudPlugin {
             .add_systems(OnExit(GameState::Playing), despawn_all::<HudRoot>)
             .add_systems(OnEnter(GameState::Paused), spawn_pause_overlay)
             .add_systems(OnExit(GameState::Paused), despawn_all::<PauseOverlay>)
-            .add_systems(OnEnter(GameState::GameOver), spawn_game_over_overlay)
+            .add_systems(OnEnter(GameState::GameOver), spawn_game_over_overlay.after(HighScoreSet))
             .add_systems(OnExit(GameState::GameOver), despawn_all::<GameOverOverlay>)
             // Update HUD every frame while playing
             .add_systems(
@@ -132,7 +133,7 @@ fn update_hud(
 // Overlay screens
 // ---------------------------------------------------------------------------
 
-fn spawn_menu_overlay(mut commands: Commands) {
+fn spawn_menu_overlay(mut commands: Commands, high_score: Res<HighScore>) {
     commands
         .spawn((
             MenuOverlay,
@@ -156,8 +157,21 @@ fn spawn_menu_overlay(mut commands: Commands) {
                 },
                 TextColor(Color::srgb(0.2, 0.8, 0.2)),
             ));
+
+            // Show high score if one exists
+            if high_score.value > 0 {
+                parent.spawn((
+                    Text::new(format!("High Score: {}", high_score.value)),
+                    TextFont {
+                        font_size: 28.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(1.0, 0.85, 0.0)),
+                ));
+            }
+
             parent.spawn((
-                Text::new("Press ENTER or SPACE to play"),
+                Text::new("Press SPACE to Play"),
                 TextFont {
                     font_size: 24.0,
                     ..default()
@@ -165,7 +179,7 @@ fn spawn_menu_overlay(mut commands: Commands) {
                 TextColor(Color::srgb(0.8, 0.8, 0.8)),
             ));
             parent.spawn((
-                Text::new("A/D or Arrows: Move  |  Space: Jump  |  R: Regenerate Level"),
+                Text::new("A/D: Move  |  Space: Jump  |  ESC: Pause"),
                 TextFont {
                     font_size: 16.0,
                     ..default()
@@ -210,7 +224,12 @@ fn spawn_pause_overlay(mut commands: Commands) {
         });
 }
 
-fn spawn_game_over_overlay(mut commands: Commands) {
+fn spawn_game_over_overlay(
+    mut commands: Commands,
+    score: Res<Score>,
+    high_score: Res<HighScore>,
+    new_high_score: Option<Res<NewHighScoreFlag>>,
+) {
     commands
         .spawn((
             GameOverOverlay,
@@ -234,8 +253,41 @@ fn spawn_game_over_overlay(mut commands: Commands) {
                 },
                 TextColor(Color::srgb(1.0, 0.2, 0.2)),
             ));
+
+            // Final score
             parent.spawn((
-                Text::new("Press ENTER or SPACE to retry"),
+                Text::new(format!("Score: {}", score.value)),
+                TextFont {
+                    font_size: 28.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 1.0, 1.0)),
+            ));
+
+            // High score
+            parent.spawn((
+                Text::new(format!("High Score: {}", high_score.value)),
+                TextFont {
+                    font_size: 24.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 0.85, 0.0)),
+            ));
+
+            // NEW HIGH SCORE callout
+            if new_high_score.is_some() {
+                parent.spawn((
+                    Text::new("NEW HIGH SCORE!"),
+                    TextFont {
+                        font_size: 32.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(1.0, 1.0, 0.0)),
+                ));
+            }
+
+            parent.spawn((
+                Text::new("Press SPACE to Retry"),
                 TextFont {
                     font_size: 24.0,
                     ..default()

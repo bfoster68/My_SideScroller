@@ -1,7 +1,22 @@
 use bevy::prelude::*;
+use bevy::audio::Volume;
 
 use crate::player::{Grounded, Player, Velocity};
 use crate::state::GameState;
+
+/// Global game settings — volume, etc. Future sprints can add more fields.
+#[derive(Resource)]
+pub struct GameSettings {
+    pub master_volume: f32, // 0.0 to 1.0
+}
+
+impl Default for GameSettings {
+    fn default() -> Self {
+        Self {
+            master_volume: 1.0,
+        }
+    }
+}
 
 /// Tracks previous grounded state for detecting landing.
 #[derive(Resource, Default)]
@@ -25,7 +40,8 @@ pub struct GameAudioPlugin;
 
 impl Plugin for GameAudioPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AudioPrevGrounded>()
+        app.init_resource::<GameSettings>()
+            .init_resource::<AudioPrevGrounded>()
             .init_resource::<AudioPrevAirborne>()
             .init_resource::<AudioHandles>()
             .add_systems(Startup, load_audio_assets)
@@ -54,6 +70,7 @@ fn play_jump_sfx(
     mut prev_airborne: ResMut<AudioPrevAirborne>,
     query: Query<(&Grounded, &Velocity), With<Player>>,
     handles: Res<AudioHandles>,
+    settings: Res<GameSettings>,
 ) {
     let Ok((grounded, velocity)) = query.single() else {
         return;
@@ -63,7 +80,13 @@ fn play_jump_sfx(
 
     if is_airborne && !prev_airborne.0 && velocity.0.y > 0.0 {
         if let Some(ref handle) = handles.jump {
-            commands.spawn(AudioPlayer::new(handle.clone()));
+            commands.spawn((
+                AudioPlayer::new(handle.clone()),
+                PlaybackSettings {
+                    volume: Volume::Linear(settings.master_volume),
+                    ..default()
+                },
+            ));
         }
     }
 
@@ -75,6 +98,7 @@ fn play_land_sfx(
     mut prev_grounded: ResMut<AudioPrevGrounded>,
     query: Query<&Grounded, With<Player>>,
     handles: Res<AudioHandles>,
+    settings: Res<GameSettings>,
 ) {
     let Ok(grounded) = query.single() else {
         return;
@@ -82,7 +106,13 @@ fn play_land_sfx(
 
     if grounded.on_ground && !prev_grounded.0 {
         if let Some(ref handle) = handles.land {
-            commands.spawn(AudioPlayer::new(handle.clone()));
+            commands.spawn((
+                AudioPlayer::new(handle.clone()),
+                PlaybackSettings {
+                    volume: Volume::Linear(settings.master_volume),
+                    ..default()
+                },
+            ));
         }
     }
 

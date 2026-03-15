@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use crate::animation::{AnimationTimer, CurrentAnim, FacingDirection, PlayerAnimState, SpriteSheets};
 use crate::constants::*;
 use crate::health::Health;
-use crate::level::{ChunkTracker, Difficulty, Platform, PlatformSize};
+use crate::level::{Platform, PlatformSize};
 use crate::state::GameState;
 
 /// System set for player movement — other modules can schedule `.after(PlayerMovementSet)`.
@@ -66,7 +66,8 @@ impl Plugin for PlayerPlugin {
                     .in_set(PlayerMovementSet)
                     .run_if(in_state(GameState::Playing)),
             )
-            .add_systems(OnEnter(GameState::GameOver), reset_player_on_game_over);
+            .add_systems(OnEnter(GameState::GameOver), reset_player_on_game_over)
+            .add_systems(OnEnter(GameState::Playing), reset_score_on_play);
     }
 }
 
@@ -272,6 +273,10 @@ fn respawn_on_fall(
         With<Player>,
     >,
     camera_query: Query<&Transform, (With<Camera2d>, Without<Player>)>,
+    platform_query: Query<
+        (&Transform, &PlatformSize),
+        (With<Platform>, Without<Player>, Without<Camera2d>),
+    >,
 ) {
     let Ok((mut transform, mut velocity, mut grounded, mut jump_counter)) =
         query.single_mut()
@@ -280,13 +285,34 @@ fn respawn_on_fall(
     };
 
     if transform.translation.y < FALL_LIMIT {
-        // Respawn near the camera position so the player stays in the action
-        let respawn_x = camera_query
+        let camera_x = camera_query
             .single()
             .map(|c| c.translation.x)
             .unwrap_or(SPAWN_X);
-        transform.translation.x = respawn_x;
-        transform.translation.y = SPAWN_Y;
+
+        // Find the nearest platform to the camera and spawn on top of it.
+        // This prevents respawning over a ground gap and falling in a loop.
+        let mut best_platform: Option<(f32, f32)> = None; // (x, top_y)
+        let mut best_dist = f32::MAX;
+
+        for (plat_tf, plat_size) in &platform_query {
+            let dist = (plat_tf.translation.x - camera_x).abs();
+            if dist < best_dist {
+                best_dist = dist;
+                let top_y = plat_tf.translation.y + plat_size.0.y / 2.0;
+                best_platform = Some((plat_tf.translation.x, top_y));
+            }
+        }
+
+        if let Some((plat_x, top_y)) = best_platform {
+            transform.translation.x = plat_x;
+            transform.translation.y = top_y + PLAYER_HEIGHT / 2.0 + 1.0;
+        } else {
+            // Fallback if no platforms exist
+            transform.translation.x = camera_x;
+            transform.translation.y = SPAWN_Y;
+        }
+
         velocity.0 = Vec2::ZERO;
         grounded.on_ground = true;
         grounded.coyote_timer = 0.0;
@@ -295,36 +321,43 @@ fn respawn_on_fall(
 }
 
 fn reset_player_on_game_over(
+    mut query: Query<(&mut Health,), With<Player>>,
+) {
+    let Ok((mut health,)) = query.single_mut() else {
+        return;
+    };
+    // Only reset health here so the player stops taking damage.
+    // Everything else resets on OnEnter(Playing) so the level is ready.
+    health.current = health.max;
+}
+
+/// Reset score, coins, and player position when starting a new game.
+/// Level cleanup (chunk_tracker, difficulty, entity despawn) is handled
+/// by reset_level_if_needed in level.rs.
+fn reset_score_on_play(
+    mut score: ResMut<Score>,
+    mut coins: ResMut<Coins>,
     mut query: Query<
         (
             &mut Transform,
             &mut Velocity,
             &mut Grounded,
             &mut JumpCounter,
-            &mut Health,
         ),
         With<Player>,
     >,
-    mut score: ResMut<Score>,
-    mut coins: ResMut<Coins>,
-    mut chunk_tracker: ResMut<ChunkTracker>,
-    mut difficulty: ResMut<Difficulty>,
 ) {
-    let Ok((mut transform, mut velocity, mut grounded, mut jump_counter, mut health)) =
-        query.single_mut()
-    else {
-        return;
-    };
-
-    transform.translation.x = SPAWN_X;
-    transform.translation.y = SPAWN_Y;
-    velocity.0 = Vec2::ZERO;
-    grounded.on_ground = true;
-    grounded.coyote_timer = 0.0;
-    jump_counter.jumps_remaining = MAX_JUMPS;
-    health.current = health.max;
     score.value = 0;
     coins.count = 0;
-    *chunk_tracker = ChunkTracker::default();
-    difficulty.value = 0.0;
+
+    if let Ok((mut transform, mut velocity, mut grounded, mut jump_counter)) =
+        query.single_mut()
+    {
+        transform.translation.x = SPAWN_X;
+        transform.translation.y = SPAWN_Y;
+        velocity.0 = Vec2::ZERO;
+        grounded.on_ground = true;
+        grounded.coyote_timer = 0.0;
+        jump_counter.jumps_remaining = MAX_JUMPS;
+    }
 }
