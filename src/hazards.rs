@@ -37,11 +37,25 @@ pub fn spawn_spike(commands: &mut Commands, x: f32, platform_y: f32) {
     ));
 }
 
+/// Spawn a spike as a child of a moving platform (local coordinates).
+pub fn spawn_spike_on_moving(parent: &mut ChildSpawnerCommands) {
+    let local_y = (PLATFORM_HEIGHT / 2.0) + (SPIKE_HEIGHT / 2.0);
+
+    parent.spawn((
+        Sprite::from_color(
+            Color::srgb(0.6, 0.1, 0.1),
+            Vec2::new(SPIKE_WIDTH, SPIKE_HEIGHT),
+        ),
+        Transform::from_xyz(0.0, local_y, SPIKE_Z),
+        Spike,
+    ));
+}
+
 /// Damage the player when they touch a spike.
 fn spike_player_collision(
     mut commands: Commands,
     player_query: Query<(&Transform, Option<&Invincible>), With<Player>>,
-    spike_query: Query<&Transform, With<Spike>>,
+    spike_query: Query<&GlobalTransform, With<Spike>>,
     mut damage_events: MessageWriter<DamageEvent>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
@@ -59,11 +73,12 @@ fn spike_player_collision(
     let spike_half_w = SPIKE_WIDTH / 2.0;
     let spike_half_h = SPIKE_HEIGHT / 2.0;
 
-    for spike_tf in &spike_query {
+    for spike_gtf in &spike_query {
+        let spike_pos = spike_gtf.translation();
         let overlap_x = (player_half_w + spike_half_w)
-            - (player_tf.translation.x - spike_tf.translation.x).abs();
+            - (player_tf.translation.x - spike_pos.x).abs();
         let overlap_y = (player_half_h + spike_half_h)
-            - (player_tf.translation.y - spike_tf.translation.y).abs();
+            - (player_tf.translation.y - spike_pos.y).abs();
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
             damage_events.write(DamageEvent { amount: SPIKE_DAMAGE });

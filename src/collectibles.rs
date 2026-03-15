@@ -53,6 +53,24 @@ pub fn spawn_coin_at(commands: &mut Commands, x: f32, y: f32) {
     ));
 }
 
+/// Spawn a coin as a child of a moving platform (local coordinates).
+pub fn spawn_coin_on_moving(parent: &mut ChildSpawnerCommands) {
+    let local_y = (PLATFORM_HEIGHT / 2.0) + COIN_FLOAT_HEIGHT;
+
+    parent.spawn((
+        Sprite::from_color(
+            Color::srgb(1.0, 0.85, 0.0),
+            Vec2::new(COIN_SIZE, COIN_SIZE),
+        ),
+        Transform::from_xyz(0.0, local_y, COIN_Z),
+        Coin,
+        CoinBob {
+            base_y: local_y,
+            phase: 0.0,
+        },
+    ));
+}
+
 /// Bob coins up/down and simulate spinning via X-scale oscillation.
 fn coin_animate(
     time: Res<Time>,
@@ -74,7 +92,7 @@ fn coin_animate(
 fn coin_player_collision(
     mut commands: Commands,
     player_query: Query<&Transform, With<Player>>,
-    coin_query: Query<(Entity, &Transform), With<Coin>>,
+    coin_query: Query<(Entity, &GlobalTransform), With<Coin>>,
     mut coins: ResMut<Coins>,
     mut score: ResMut<Score>,
     audio_handles: Option<Res<AudioHandles>>,
@@ -87,11 +105,12 @@ fn coin_player_collision(
     let player_half_h = PLAYER_HEIGHT / 2.0;
     let coin_half = COIN_SIZE / 2.0;
 
-    for (entity, coin_tf) in &coin_query {
+    for (entity, coin_gtf) in &coin_query {
+        let coin_pos = coin_gtf.translation();
         let overlap_x = (player_half_w + coin_half)
-            - (player_tf.translation.x - coin_tf.translation.x).abs();
+            - (player_tf.translation.x - coin_pos.x).abs();
         let overlap_y = (player_half_h + coin_half)
-            - (player_tf.translation.y - coin_tf.translation.y).abs();
+            - (player_tf.translation.y - coin_pos.y).abs();
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
             commands.entity(entity).despawn();

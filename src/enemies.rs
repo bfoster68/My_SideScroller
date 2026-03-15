@@ -60,6 +60,27 @@ pub fn spawn_enemy(
     ));
 }
 
+/// Spawn an enemy as a child of a moving platform (local coordinates).
+pub fn spawn_enemy_on_moving(parent: &mut ChildSpawnerCommands, platform_width: f32) {
+    let half_plat = platform_width / 2.0;
+    let enemy_half = ENEMY_WIDTH / 2.0;
+    let local_y = (PLATFORM_HEIGHT / 2.0) + (ENEMY_HEIGHT / 2.0);
+
+    parent.spawn((
+        Sprite::from_color(
+            Color::srgb(0.85, 0.2, 0.15),
+            Vec2::new(ENEMY_WIDTH, ENEMY_HEIGHT),
+        ),
+        Transform::from_xyz(0.0, local_y, ENEMY_Z),
+        Enemy,
+        Patrol {
+            left_bound: -half_plat + enemy_half,
+            right_bound: half_plat - enemy_half,
+            direction: 1.0,
+        },
+    ));
+}
+
 /// Move enemies back and forth within their patrol bounds.
 fn enemy_patrol(
     time: Res<Time>,
@@ -89,7 +110,7 @@ fn enemy_player_collision(
         (&Transform, &mut Velocity, Option<&Invincible>),
         With<Player>,
     >,
-    enemy_query: Query<(Entity, &Transform), With<Enemy>>,
+    enemy_query: Query<(Entity, &GlobalTransform), With<Enemy>>,
     mut damage_events: MessageWriter<DamageEvent>,
     mut score: ResMut<Score>,
     audio_handles: Option<Res<AudioHandles>>,
@@ -103,12 +124,13 @@ fn enemy_player_collision(
     let enemy_half_w = ENEMY_WIDTH / 2.0;
     let enemy_half_h = ENEMY_HEIGHT / 2.0;
 
-    for (enemy_entity, enemy_tf) in &enemy_query {
+    for (enemy_entity, enemy_gtf) in &enemy_query {
+        let enemy_pos = enemy_gtf.translation();
         // AABB overlap test
         let overlap_x = (player_half_w + enemy_half_w)
-            - (player_tf.translation.x - enemy_tf.translation.x).abs();
+            - (player_tf.translation.x - enemy_pos.x).abs();
         let overlap_y = (player_half_h + enemy_half_h)
-            - (player_tf.translation.y - enemy_tf.translation.y).abs();
+            - (player_tf.translation.y - enemy_pos.y).abs();
 
         if overlap_x <= 0.0 || overlap_y <= 0.0 {
             continue;
@@ -117,7 +139,7 @@ fn enemy_player_collision(
         // Determine stomp vs contact damage
         let player_bottom = player_tf.translation.y - player_half_h;
         let stomp_zone =
-            enemy_tf.translation.y + enemy_half_h * (1.0 - 2.0 * ENEMY_STOMP_THRESHOLD);
+            enemy_pos.y + enemy_half_h * (1.0 - 2.0 * ENEMY_STOMP_THRESHOLD);
 
         let is_stomp = player_vel.0.y < 0.0 && player_bottom >= stomp_zone;
 

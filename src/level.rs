@@ -1,11 +1,11 @@
 use bevy::prelude::*;
 use rand::Rng;
 
-use crate::collectibles::{spawn_coin, spawn_coin_at, Coin};
+use crate::collectibles::{spawn_coin, spawn_coin_at, spawn_coin_on_moving, Coin};
 use crate::constants::*;
-use crate::enemies::{spawn_enemy, Enemy};
-use crate::hazards::{spawn_spike, Spike};
-use crate::player::Score;
+use crate::enemies::{spawn_enemy, spawn_enemy_on_moving, Enemy};
+use crate::hazards::{spawn_spike, spawn_spike_on_moving, Spike};
+use crate::player::{PlayerMovementSet, Score};
 use crate::state::GameState;
 
 #[derive(Component)]
@@ -25,6 +25,10 @@ pub struct MovingPlatform {
     pub speed: f32,
     pub range: f32,
 }
+
+/// Per-frame velocity of a platform (used to carry the player along).
+#[derive(Component, Default)]
+pub struct PlatformVelocity(pub Vec2);
 
 /// Tracks how far right we've generated content.
 #[derive(Resource)]
@@ -65,6 +69,7 @@ impl Plugin for LevelPlugin {
                     moving_platform_system,
                 )
                     .chain()
+                    .before(PlayerMovementSet)
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(OnEnter(GameState::Playing), reset_level_if_needed);
@@ -77,7 +82,6 @@ fn reset_level_if_needed(
     mut chunk_tracker: ResMut<ChunkTracker>,
     mut difficulty: ResMut<Difficulty>,
     platform_query: Query<Entity, With<Platform>>,
-    decor_query: Query<Entity, With<PlatformDecor>>,
     enemy_query: Query<Entity, With<Enemy>>,
     coin_query: Query<Entity, With<Coin>>,
     spike_query: Query<Entity, With<Spike>>,
@@ -88,11 +92,8 @@ fn reset_level_if_needed(
         return;
     }
 
-    // Despawn everything
+    // Despawn everything (recursive handles child decor)
     for entity in &platform_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &decor_query {
         commands.entity(entity).despawn();
     }
     for entity in &enemy_query {
@@ -201,8 +202,9 @@ fn generate_chunks(
         color_idx += 1;
 
         // Maybe make it a moving platform
-        if rng.gen_bool(moving_chance.min(0.5)) {
-            spawn_moving_platform(
+        let is_moving = rng.gen_bool(moving_chance.min(0.5));
+        if is_moving {
+            let plat_entity = spawn_moving_platform(
                 &mut commands,
                 new_x,
                 new_y,
@@ -212,6 +214,22 @@ fn generate_chunks(
                 MOVING_PLATFORM_SPEED,
                 MOVING_PLATFORM_RANGE,
             );
+
+            // Spawn occupants as children so they move with the platform
+            let roll: f64 = rng.gen();
+            if roll < enemy_chance && width >= ENEMY_WIDTH * 2.5 {
+                commands.entity(plat_entity).with_children(|parent| {
+                    spawn_enemy_on_moving(parent, width);
+                });
+            } else if roll < enemy_chance + spike_chance {
+                commands.entity(plat_entity).with_children(|parent| {
+                    spawn_spike_on_moving(parent);
+                });
+            } else if roll < enemy_chance + spike_chance + coin_chance {
+                commands.entity(plat_entity).with_children(|parent| {
+                    spawn_coin_on_moving(parent);
+                });
+            }
         } else {
             spawn_platform(
                 &mut commands,
@@ -222,23 +240,88 @@ fn generate_chunks(
                 color,
                 false,
             );
+
+            // Decide what to place on this platform
+            let roll: f64 = rng.gen();
+            if roll < enemy_chance && width >= ENEMY_WIDTH * 2.5 {
+                spawn_enemy(&mut commands, new_x, new_y, width);
+            } else if roll < enemy_chance + spike_chance {
+                spawn_spike(&mut commands, new_x, new_y);
+            } else if roll < enemy_chance + spike_chance + coin_chance {
+                spawn_coin(&mut commands, new_x, new_y);
+            }
         }
 
-        // Decide what to place on this platform
-        let roll: f64 = rng.gen();
-        if roll < enemy_chance && width >= ENEMY_WIDTH * 2.5 {
-            spawn_enemy(&mut commands, new_x, new_y, width);
-        } else if roll < enemy_chance + spike_chance {
-            spawn_spike(&mut commands, new_x, new_y);
-        } else if roll < enemy_chance + spike_chance + coin_chance {
-            spawn_coin(&mut commands, new_x, new_y);
-        }
+        // Coin formations between platforms (Sonic-style variety).
+        // Minimum Y ensures coins never spawn below or inside platforms.
+        if rng.gen_bool(0.4) {
+            let prev_x = tracker.rightmost_platform_x;
+            let prev_y = tracker.last_platform_y;
+            let min_coin_y = prev_y.min(new_y) + PLATFORM_HEIGHT / 2.0 + COIN_SIZE;
+            let pattern: u32 = rng.gen_range(0..5);
 
-        // Mid-air coin between platforms
-        if rng.gen_bool(0.3) {
-            let mid_x = (tracker.rightmost_platform_x + new_x) / 2.0;
-            let mid_y = ((tracker.last_platform_y + new_y) / 2.0) + 40.0;
-            spawn_coin_at(&mut commands, mid_x, mid_y);
+            match pattern {
+                0 => {
+                    // Arc of coins — parabolic path between platforms
+                    let count = rng.gen_range(4..7);
+                    for i in 0..count {
+                        let t = (i as f32 + 1.0) / (count as f32 + 1.0);
+                        let cx = prev_x + (new_x - prev_x) * t;
+                        let base_y = prev_y + (new_y - prev_y) * t;
+                        let arc_h = 80.0 * (4.0 * t * (1.0 - t));
+                        let cy = (base_y + arc_h).max(min_coin_y);
+                        spawn_coin_at(&mut commands, cx, cy);
+                    }
+                }
+                1 => {
+                    // Horizontal line at jump height above destination platform
+                    let count = rng.gen_range(3..6);
+                    let line_y = new_y + COIN_FLOAT_HEIGHT;
+                    let spread = (count as f32 - 1.0) * 30.0;
+                    let start_x = new_x - spread / 2.0;
+                    for i in 0..count {
+                        spawn_coin_at(
+                            &mut commands,
+                            start_x + i as f32 * 30.0,
+                            line_y.max(min_coin_y),
+                        );
+                    }
+                }
+                2 => {
+                    // Vertical stack above platform — reward for precise landing
+                    let count = rng.gen_range(3..5);
+                    let stack_x = new_x;
+                    let base = new_y + COIN_FLOAT_HEIGHT;
+                    for i in 0..count {
+                        spawn_coin_at(
+                            &mut commands,
+                            stack_x,
+                            (base + i as f32 * 30.0).max(min_coin_y),
+                        );
+                    }
+                }
+                3 => {
+                    // Diagonal trail — always ascending between platforms
+                    let count = rng.gen_range(3..6);
+                    for i in 0..count {
+                        let t = (i as f32 + 1.0) / (count as f32 + 1.0);
+                        let cx = prev_x + (new_x - prev_x) * t;
+                        let cy = prev_y.min(new_y) + COIN_FLOAT_HEIGHT
+                            + i as f32 * 25.0;
+                        spawn_coin_at(&mut commands, cx, cy.max(min_coin_y));
+                    }
+                }
+                _ => {
+                    // Diamond/ring shape — floating between platforms
+                    let mid_x = (prev_x + new_x) / 2.0;
+                    let mid_y = (prev_y.max(new_y) + 60.0).max(min_coin_y + 30.0);
+                    let r = 25.0;
+                    spawn_coin_at(&mut commands, mid_x, mid_y + r);
+                    spawn_coin_at(&mut commands, mid_x + r, mid_y);
+                    spawn_coin_at(&mut commands, mid_x, (mid_y - r).max(min_coin_y));
+                    spawn_coin_at(&mut commands, mid_x - r, mid_y);
+                }
+            }
         }
 
         tracker.rightmost_platform_x = new_x;
@@ -254,7 +337,6 @@ fn despawn_behind_camera(
         (Entity, &Transform),
         Or<(
             With<Platform>,
-            With<PlatformDecor>,
             With<Enemy>,
             With<Coin>,
             With<Spike>,
@@ -273,14 +355,16 @@ fn despawn_behind_camera(
     }
 }
 
-/// Oscillate moving platforms up and down.
+/// Oscillate moving platforms up and down, storing the per-frame delta.
 fn moving_platform_system(
     time: Res<Time>,
-    mut query: Query<(&mut Transform, &MovingPlatform)>,
+    mut query: Query<(&mut Transform, &MovingPlatform, &mut PlatformVelocity)>,
 ) {
     let t = time.elapsed_secs();
-    for (mut transform, moving) in &mut query {
-        transform.translation.y = moving.base_y + (t * moving.speed).sin() * moving.range;
+    for (mut transform, moving, mut plat_vel) in &mut query {
+        let new_y = moving.base_y + (t * moving.speed).sin() * moving.range;
+        plat_vel.0.y = new_y - transform.translation.y;
+        transform.translation.y = new_y;
     }
 }
 
@@ -294,50 +378,47 @@ fn spawn_platform(
     color: Color,
     is_ground: bool,
 ) {
-    // Main body
-    commands.spawn((
-        Sprite::from_color(color, Vec2::new(width, height)),
-        Transform::from_xyz(x, y, 0.0),
-        Platform,
-        PlatformSize(Vec2::new(width, height)),
-    ));
-
-    // Top surface highlight
     let highlight = if is_ground {
         Color::srgb(0.45, 0.55, 0.3)
     } else {
         lighten(color, 0.15)
     };
     let highlight_h = if is_ground { 6.0 } else { 3.0 };
-
-    commands.spawn((
-        Sprite::from_color(highlight, Vec2::new(width, highlight_h)),
-        Transform::from_xyz(x, y + height / 2.0 - highlight_h / 2.0, 0.1),
-        PlatformDecor,
-    ));
-
-    // Bottom edge shadow
     let shadow_h = 2.0;
-    commands.spawn((
-        Sprite::from_color(darken(color, 0.15), Vec2::new(width, shadow_h)),
-        Transform::from_xyz(x, y - height / 2.0 + shadow_h / 2.0, 0.1),
-        PlatformDecor,
-    ));
 
-    // Side shading for floating platforms
-    if !is_ground {
-        let edge_w = 3.0;
-        commands.spawn((
-            Sprite::from_color(darken(color, 0.08), Vec2::new(edge_w, height)),
-            Transform::from_xyz(x - width / 2.0 + edge_w / 2.0, y, 0.1),
+    commands.spawn((
+        Sprite::from_color(color, Vec2::new(width, height)),
+        Transform::from_xyz(x, y, 0.0),
+        Platform,
+        PlatformSize(Vec2::new(width, height)),
+    )).with_children(|parent| {
+        // Top surface highlight
+        parent.spawn((
+            Sprite::from_color(highlight, Vec2::new(width, highlight_h)),
+            Transform::from_xyz(0.0, height / 2.0 - highlight_h / 2.0, 0.1),
             PlatformDecor,
         ));
-        commands.spawn((
-            Sprite::from_color(darken(color, 0.08), Vec2::new(edge_w, height)),
-            Transform::from_xyz(x + width / 2.0 - edge_w / 2.0, y, 0.1),
+        // Bottom edge shadow
+        parent.spawn((
+            Sprite::from_color(darken(color, 0.15), Vec2::new(width, shadow_h)),
+            Transform::from_xyz(0.0, -height / 2.0 + shadow_h / 2.0, 0.1),
             PlatformDecor,
         ));
-    }
+        // Side shading for floating platforms
+        if !is_ground {
+            let edge_w = 3.0;
+            parent.spawn((
+                Sprite::from_color(darken(color, 0.08), Vec2::new(edge_w, height)),
+                Transform::from_xyz(-width / 2.0 + edge_w / 2.0, 0.0, 0.1),
+                PlatformDecor,
+            ));
+            parent.spawn((
+                Sprite::from_color(darken(color, 0.08), Vec2::new(edge_w, height)),
+                Transform::from_xyz(width / 2.0 - edge_w / 2.0, 0.0, 0.1),
+                PlatformDecor,
+            ));
+        }
+    });
 }
 
 /// Spawn a platform that also has the MovingPlatform component.
@@ -350,8 +431,11 @@ fn spawn_moving_platform(
     color: Color,
     speed: f32,
     range: f32,
-) {
-    commands.spawn((
+) -> Entity {
+    let highlight = lighten(color, 0.15);
+    let edge_w = 3.0;
+
+    let entity = commands.spawn((
         Sprite::from_color(color, Vec2::new(width, height)),
         Transform::from_xyz(x, y, 0.0),
         Platform,
@@ -361,35 +445,34 @@ fn spawn_moving_platform(
             speed,
             range,
         },
-    ));
+        PlatformVelocity::default(),
+    )).with_children(|parent| {
+        // Highlight (relative to parent)
+        parent.spawn((
+            Sprite::from_color(highlight, Vec2::new(width, 3.0)),
+            Transform::from_xyz(0.0, height / 2.0 - 1.5, 0.1),
+            PlatformDecor,
+        ));
+        // Shadow
+        parent.spawn((
+            Sprite::from_color(darken(color, 0.15), Vec2::new(width, 2.0)),
+            Transform::from_xyz(0.0, -height / 2.0 + 1.0, 0.1),
+            PlatformDecor,
+        ));
+        // Side edges
+        parent.spawn((
+            Sprite::from_color(darken(color, 0.08), Vec2::new(edge_w, height)),
+            Transform::from_xyz(-width / 2.0 + edge_w / 2.0, 0.0, 0.1),
+            PlatformDecor,
+        ));
+        parent.spawn((
+            Sprite::from_color(darken(color, 0.08), Vec2::new(edge_w, height)),
+            Transform::from_xyz(width / 2.0 - edge_w / 2.0, 0.0, 0.1),
+            PlatformDecor,
+        ));
+    }).id();
 
-    // Highlight
-    let highlight = lighten(color, 0.15);
-    commands.spawn((
-        Sprite::from_color(highlight, Vec2::new(width, 3.0)),
-        Transform::from_xyz(x, y + height / 2.0 - 1.5, 0.1),
-        PlatformDecor,
-    ));
-
-    // Shadow
-    commands.spawn((
-        Sprite::from_color(darken(color, 0.15), Vec2::new(width, 2.0)),
-        Transform::from_xyz(x, y - height / 2.0 + 1.0, 0.1),
-        PlatformDecor,
-    ));
-
-    // Side edges
-    let edge_w = 3.0;
-    commands.spawn((
-        Sprite::from_color(darken(color, 0.08), Vec2::new(edge_w, height)),
-        Transform::from_xyz(x - width / 2.0 + edge_w / 2.0, y, 0.1),
-        PlatformDecor,
-    ));
-    commands.spawn((
-        Sprite::from_color(darken(color, 0.08), Vec2::new(edge_w, height)),
-        Transform::from_xyz(x + width / 2.0 - edge_w / 2.0, y, 0.1),
-        PlatformDecor,
-    ));
+    entity
 }
 
 // ---------------------------------------------------------------------------

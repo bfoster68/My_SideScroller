@@ -2,8 +2,10 @@ use bevy::prelude::*;
 
 use crate::animation::{AnimationTimer, CurrentAnim, FacingDirection, PlayerAnimState, SpriteSheets};
 use crate::constants::*;
-use crate::health::Health;
-use crate::level::{Platform, PlatformSize};
+use crate::enemies::Enemy;
+use crate::hazards::Spike;
+use crate::health::{Health, Invincible};
+use crate::level::{Platform, PlatformSize, PlatformVelocity};
 use crate::state::GameState;
 
 /// System set for player movement — other modules can schedule `.after(PlayerMovementSet)`.
@@ -196,7 +198,7 @@ fn apply_velocity(
         With<Player>,
     >,
     platform_query: Query<
-        (&Transform, &PlatformSize),
+        (&Transform, &PlatformSize, Option<&PlatformVelocity>),
         (With<Platform>, Without<Player>),
     >,
 ) {
@@ -210,7 +212,7 @@ fn apply_velocity(
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
 
-    for (plat_tf, plat_size) in &platform_query {
+    for (plat_tf, plat_size, _) in &platform_query {
         let plat_half_w = plat_size.0.x / 2.0;
         let plat_half_h = plat_size.0.y / 2.0;
 
@@ -219,7 +221,7 @@ fn apply_velocity(
         let overlap_y = (player_half_h + plat_half_h)
             - (transform.translation.y - plat_tf.translation.y).abs();
 
-        if overlap_x > 0.0 && overlap_y > 0.0 {
+        if overlap_x > 0.0 && overlap_y > 0.0 && overlap_x < overlap_y {
             if transform.translation.x < plat_tf.translation.x {
                 transform.translation.x =
                     plat_tf.translation.x - plat_half_w - player_half_w;
@@ -235,8 +237,9 @@ fn apply_velocity(
     transform.translation.y += velocity.0.y * time.delta_secs();
 
     grounded.on_ground = false;
+    let mut riding_delta_y = 0.0_f32;
 
-    for (plat_tf, plat_size) in &platform_query {
+    for (plat_tf, plat_size, plat_vel) in &platform_query {
         let plat_half_w = plat_size.0.x / 2.0;
         let plat_half_h = plat_size.0.y / 2.0;
 
@@ -251,8 +254,12 @@ fn apply_velocity(
             if overlap_y <= 0.0 && transform.translation.y > plat_tf.translation.y {
                 // Resting exactly on top — just mark grounded, no position correction.
                 grounded.on_ground = true;
+                if let Some(pv) = plat_vel {
+                    riding_delta_y = pv.0.y;
+                }
             } else if overlap_y > 0.0 && transform.translation.y > plat_tf.translation.y {
-                // Landing on top
+                // Landing on top — snap already places player at platform's
+                // current position, so no riding delta needed here.
                 transform.translation.y =
                     plat_tf.translation.y + plat_half_h + player_half_h;
                 velocity.0.y = 0.0;
@@ -265,11 +272,17 @@ fn apply_velocity(
             }
         }
     }
+
+    // Carry the player along with the moving platform
+    if grounded.on_ground && riding_delta_y.abs() > 0.0 {
+        transform.translation.y += riding_delta_y;
+    }
 }
 
 fn respawn_on_fall(
+    mut commands: Commands,
     mut query: Query<
-        (&mut Transform, &mut Velocity, &mut Grounded, &mut JumpCounter),
+        (Entity, &mut Transform, &mut Velocity, &mut Grounded, &mut JumpCounter),
         With<Player>,
     >,
     camera_query: Query<&Transform, (With<Camera2d>, Without<Player>)>,
@@ -277,30 +290,78 @@ fn respawn_on_fall(
         (&Transform, &PlatformSize),
         (With<Platform>, Without<Player>, Without<Camera2d>),
     >,
+    enemy_query: Query<&GlobalTransform, (With<Enemy>, Without<Player>, Without<Camera2d>, Without<Platform>)>,
+    spike_query: Query<&GlobalTransform, (With<Spike>, Without<Player>, Without<Camera2d>, Without<Platform>)>,
 ) {
-    let Ok((mut transform, mut velocity, mut grounded, mut jump_counter)) =
+    let Ok((entity, mut transform, mut velocity, mut grounded, mut jump_counter)) =
         query.single_mut()
     else {
         return;
     };
 
-    if transform.translation.y < FALL_LIMIT {
+    // Trigger respawn either when hitting the hard limit OR when
+    // the player is falling and there is no platform beneath them.
+    let needs_respawn = if transform.translation.y < FALL_LIMIT {
+        true
+    } else if !grounded.on_ground && velocity.0.y < 0.0 {
+        // Check if ANY platform exists below the player within reach
+        let player_x = transform.translation.x;
+        let player_y = transform.translation.y;
+        let has_platform_below = platform_query.iter().any(|(plat_tf, plat_size)| {
+            let plat_half_w = plat_size.0.x / 2.0;
+            let plat_top = plat_tf.translation.y + plat_size.0.y / 2.0;
+            // Platform is below the player and horizontally reachable
+            plat_top < player_y
+                && plat_top > FALL_LIMIT
+                && player_x > plat_tf.translation.x - plat_half_w - PLAYER_WIDTH
+                && player_x < plat_tf.translation.x + plat_half_w + PLAYER_WIDTH
+        });
+        !has_platform_below
+    } else {
+        false
+    };
+
+    if needs_respawn {
         let camera_x = camera_query
             .single()
             .map(|c| c.translation.x)
             .unwrap_or(SPAWN_X);
 
-        // Find the nearest platform to the camera and spawn on top of it.
-        // This prevents respawning over a ground gap and falling in a loop.
-        let mut best_platform: Option<(f32, f32)> = None; // (x, top_y)
-        let mut best_dist = f32::MAX;
+        // Collect all enemy and spike positions for hazard checking.
+        let hazard_positions: Vec<Vec2> = enemy_query
+            .iter()
+            .map(|t| t.translation().truncate())
+            .chain(spike_query.iter().map(|t| t.translation().truncate()))
+            .collect();
 
+        // Find the nearest safe platform (no enemies or spikes on it).
+        // Sort candidates by distance to camera so we pick the closest safe one.
+        let mut candidates: Vec<(f32, f32, f32)> = Vec::new(); // (dist, x, top_y)
         for (plat_tf, plat_size) in &platform_query {
             let dist = (plat_tf.translation.x - camera_x).abs();
-            if dist < best_dist {
-                best_dist = dist;
-                let top_y = plat_tf.translation.y + plat_size.0.y / 2.0;
-                best_platform = Some((plat_tf.translation.x, top_y));
+            let top_y = plat_tf.translation.y + plat_size.0.y / 2.0;
+            candidates.push((dist, plat_tf.translation.x, top_y));
+        }
+        candidates.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        let mut best_platform: Option<(f32, f32)> = None;
+        for (_dist, plat_x, top_y) in &candidates {
+            // Check if any hazard is close to this platform surface
+            let danger_radius = PLAYER_WIDTH + ENEMY_WIDTH;
+            let is_safe = !hazard_positions.iter().any(|h| {
+                (h.x - plat_x).abs() < danger_radius
+                    && (h.y - top_y).abs() < ENEMY_HEIGHT + SPIKE_HEIGHT
+            });
+            if is_safe {
+                best_platform = Some((*plat_x, *top_y));
+                break;
+            }
+        }
+
+        // If no safe platform, fall back to the closest one anyway
+        if best_platform.is_none() {
+            if let Some((_dist, plat_x, top_y)) = candidates.first() {
+                best_platform = Some((*plat_x, *top_y));
             }
         }
 
@@ -317,6 +378,11 @@ fn respawn_on_fall(
         grounded.on_ground = true;
         grounded.coyote_timer = 0.0;
         jump_counter.jumps_remaining = MAX_JUMPS;
+
+        // Grant brief invincibility after respawn as a safety net
+        commands.entity(entity).insert(Invincible {
+            timer: Timer::from_seconds(INVINCIBILITY_DURATION, TimerMode::Once),
+        });
     }
 }
 
