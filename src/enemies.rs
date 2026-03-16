@@ -4,6 +4,7 @@ use crate::audio::AudioHandles;
 use crate::constants::*;
 use crate::health::{DamageEvent, Invincible};
 use crate::player::{Player, PlayerMovementSet, Score, Velocity};
+use crate::sprites::GameSprites;
 use crate::state::GameState;
 
 /// Marker component for enemy entities (all types share this for queries).
@@ -74,6 +75,7 @@ pub fn spawn_enemy(
     platform_x: f32,
     platform_y: f32,
     platform_width: f32,
+    image: Handle<Image>,
 ) {
     let half_plat = platform_width / 2.0;
     let enemy_half = ENEMY_WIDTH / 2.0;
@@ -82,10 +84,11 @@ pub fn spawn_enemy(
     let spawn_y = platform_y + (PLATFORM_HEIGHT / 2.0) + (ENEMY_HEIGHT / 2.0);
 
     commands.spawn((
-        Sprite::from_color(
-            Color::srgb(0.85, 0.2, 0.15), // red/orange
-            Vec2::new(ENEMY_WIDTH, ENEMY_HEIGHT),
-        ),
+        Sprite {
+            image,
+            custom_size: Some(Vec2::new(ENEMY_WIDTH, ENEMY_HEIGHT)),
+            ..default()
+        },
         Transform::from_xyz(platform_x, spawn_y, ENEMY_Z),
         Enemy,
         Patrol {
@@ -97,16 +100,17 @@ pub fn spawn_enemy(
 }
 
 /// Spawn an enemy as a child of a moving platform (local coordinates).
-pub fn spawn_enemy_on_moving(parent: &mut ChildSpawnerCommands, platform_width: f32) {
+pub fn spawn_enemy_on_moving(parent: &mut ChildSpawnerCommands, platform_width: f32, image: Handle<Image>) {
     let half_plat = platform_width / 2.0;
     let enemy_half = ENEMY_WIDTH / 2.0;
     let local_y = (PLATFORM_HEIGHT / 2.0) + (ENEMY_HEIGHT / 2.0);
 
     parent.spawn((
-        Sprite::from_color(
-            Color::srgb(0.85, 0.2, 0.15),
-            Vec2::new(ENEMY_WIDTH, ENEMY_HEIGHT),
-        ),
+        Sprite {
+            image,
+            custom_size: Some(Vec2::new(ENEMY_WIDTH, ENEMY_HEIGHT)),
+            ..default()
+        },
         Transform::from_xyz(0.0, local_y, ENEMY_Z),
         Enemy,
         Patrol {
@@ -142,14 +146,15 @@ fn enemy_patrol(
 // ---------------------------------------------------------------------------
 
 /// Spawn a flying enemy above a platform position.
-pub fn spawn_flying_enemy(commands: &mut Commands, x: f32, y: f32) {
+pub fn spawn_flying_enemy(commands: &mut Commands, x: f32, y: f32, image: Handle<Image>) {
     let hover_y = y + 80.0; // floats well above the platform
 
     commands.spawn((
-        Sprite::from_color(
-            Color::srgb(0.6, 0.3, 0.8), // purple
-            Vec2::splat(FLYING_ENEMY_SIZE),
-        ),
+        Sprite {
+            image,
+            custom_size: Some(Vec2::splat(FLYING_ENEMY_SIZE)),
+            ..default()
+        },
         Transform::from_xyz(x, hover_y, FLYING_ENEMY_Z),
         Enemy,
         FlyingEnemy {
@@ -180,14 +185,16 @@ pub fn spawn_shooter_enemy(
     commands: &mut Commands,
     platform_x: f32,
     platform_y: f32,
+    image: Handle<Image>,
 ) {
     let spawn_y = platform_y + (PLATFORM_HEIGHT / 2.0) + (SHOOTER_HEIGHT / 2.0);
 
     commands.spawn((
-        Sprite::from_color(
-            Color::srgb(0.2, 0.7, 0.3), // green
-            Vec2::new(SHOOTER_WIDTH, SHOOTER_HEIGHT),
-        ),
+        Sprite {
+            image,
+            custom_size: Some(Vec2::new(SHOOTER_WIDTH, SHOOTER_HEIGHT)),
+            ..default()
+        },
         Transform::from_xyz(platform_x, spawn_y, SHOOTER_Z),
         Enemy,
         ShooterEnemy,
@@ -203,6 +210,8 @@ fn shooter_fire(
     time: Res<Time>,
     mut query: Query<(&GlobalTransform, &mut ShootTimer), With<ShooterEnemy>>,
     player_query: Query<&Transform, With<Player>>,
+    game_sprites: Res<GameSprites>,
+    audio_handles: Option<Res<AudioHandles>>,
 ) {
     let Ok(player_tf) = player_query.single() else {
         return;
@@ -221,16 +230,24 @@ fn shooter_fire(
             .normalize_or_zero();
 
             commands.spawn((
-                Sprite::from_color(
-                    Color::srgb(0.9, 1.0, 0.3), // yellow-green bullet
-                    Vec2::splat(PROJECTILE_SIZE),
-                ),
+                Sprite {
+                    image: game_sprites.projectile.clone(),
+                    custom_size: Some(Vec2::splat(PROJECTILE_SIZE)),
+                    ..default()
+                },
                 Transform::from_xyz(shooter_pos.x, shooter_pos.y, PROJECTILE_Z),
                 Projectile {
                     velocity: dir * PROJECTILE_SPEED,
                     lifetime: Timer::from_seconds(PROJECTILE_LIFETIME, TimerMode::Once),
                 },
             ));
+
+            // Play shoot SFX
+            if let Some(ref handles) = audio_handles {
+                if let Some(ref handle) = handles.shoot {
+                    crate::audio::spawn_sfx(&mut commands, handle);
+                }
+            }
         }
     }
 }
@@ -304,7 +321,7 @@ fn enemy_player_collision(
             damage_events.write(DamageEvent { amount: 1 });
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.hit {
-                    commands.spawn(AudioPlayer::new(handle.clone()));
+                    crate::audio::spawn_sfx(&mut commands, handle);
                 }
             }
             break;
@@ -346,7 +363,7 @@ fn projectile_player_collision(
 
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.hit {
-                    commands.spawn(AudioPlayer::new(handle.clone()));
+                    crate::audio::spawn_sfx(&mut commands, handle);
                 }
             }
 

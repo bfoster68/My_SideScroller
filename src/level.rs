@@ -7,6 +7,7 @@ use crate::enemies::{spawn_enemy, spawn_enemy_on_moving, spawn_flying_enemy, spa
 use crate::hazards::{spawn_lava, spawn_saw, spawn_saw_on_moving, spawn_spike, spawn_spike_on_moving, Lava, Saw, Spike};
 use crate::player::{PlayerMovementSet, Score};
 use crate::powerups::{spawn_powerup, PowerupKind};
+use crate::sprites::GameSprites;
 use crate::state::GameState;
 
 #[derive(Component)]
@@ -148,6 +149,7 @@ fn generate_chunks(
     mut tracker: ResMut<ChunkTracker>,
     difficulty: Res<Difficulty>,
     camera_query: Query<&Transform, With<Camera2d>>,
+    game_sprites: Res<GameSprites>,
 ) {
     let Ok(camera_tf) = camera_query.single() else {
         return;
@@ -187,7 +189,7 @@ fn generate_chunks(
             );
         } else {
             // Fill ground gap with lava
-            spawn_lava(&mut commands, seg_x, GROUND_SEGMENT_WIDTH);
+            spawn_lava(&mut commands, seg_x, GROUND_SEGMENT_WIDTH, game_sprites.lava.clone());
         }
 
         tracker.rightmost_ground_x += GROUND_SEGMENT_WIDTH;
@@ -240,20 +242,24 @@ fn generate_chunks(
             let saw_chance = spike_chance * 0.5;
             let spike_remaining = spike_chance - saw_chance;
             if roll < enemy_chance && width >= ENEMY_WIDTH * 2.5 {
+                let img = game_sprites.enemy_walk.clone();
                 commands.entity(plat_entity).with_children(|parent| {
-                    spawn_enemy_on_moving(parent, width);
+                    spawn_enemy_on_moving(parent, width, img);
                 });
             } else if roll < enemy_chance + saw_chance && width >= SAW_SIZE * 3.0 {
+                let img = game_sprites.saw.clone();
                 commands.entity(plat_entity).with_children(|parent| {
-                    spawn_saw_on_moving(parent, width);
+                    spawn_saw_on_moving(parent, width, img);
                 });
             } else if roll < enemy_chance + saw_chance + spike_remaining {
+                let img = game_sprites.spike.clone();
                 commands.entity(plat_entity).with_children(|parent| {
-                    spawn_spike_on_moving(parent);
+                    spawn_spike_on_moving(parent, img);
                 });
             } else if roll < enemy_chance + spike_chance + coin_chance {
+                let img = game_sprites.coin.clone();
                 commands.entity(plat_entity).with_children(|parent| {
-                    spawn_coin_on_moving(parent);
+                    spawn_coin_on_moving(parent, img);
                 });
             }
         } else {
@@ -276,21 +282,26 @@ fn generate_chunks(
             let flying_chance = enemy_chance * 0.18;
             let shooter_chance = enemy_chance * 0.10;
             if roll < walking_chance && width >= ENEMY_WIDTH * 2.5 {
-                spawn_enemy(&mut commands, new_x, new_y, width);
+                spawn_enemy(&mut commands, new_x, new_y, width, game_sprites.enemy_walk.clone());
             } else if roll < walking_chance + flying_chance {
-                spawn_flying_enemy(&mut commands, new_x, new_y);
+                spawn_flying_enemy(&mut commands, new_x, new_y, game_sprites.enemy_fly.clone());
             } else if roll < walking_chance + flying_chance + shooter_chance {
-                spawn_shooter_enemy(&mut commands, new_x, new_y);
+                spawn_shooter_enemy(&mut commands, new_x, new_y, game_sprites.enemy_shooter.clone());
             } else if roll < enemy_chance + saw_chance && width >= SAW_SIZE * 3.0 {
-                spawn_saw(&mut commands, new_x, new_y, width);
+                spawn_saw(&mut commands, new_x, new_y, width, game_sprites.saw.clone());
             } else if roll < enemy_chance + saw_chance + spike_remaining {
-                spawn_spike(&mut commands, new_x, new_y);
+                spawn_spike(&mut commands, new_x, new_y, game_sprites.spike.clone());
             } else if roll < enemy_chance + spike_chance + coin_chance {
                 // Small chance to spawn a power-up instead of a coin
                 if rng.gen_bool(POWERUP_SPAWN_CHANCE) {
-                    spawn_powerup(&mut commands, new_x, new_y);
+                    spawn_powerup(
+                        &mut commands, new_x, new_y,
+                        game_sprites.powerup_speed.clone(),
+                        game_sprites.powerup_jump.clone(),
+                        game_sprites.powerup_shield.clone(),
+                    );
                 } else {
-                    spawn_coin(&mut commands, new_x, new_y);
+                    spawn_coin(&mut commands, new_x, new_y, game_sprites.coin.clone());
                 }
             }
         }
@@ -313,7 +324,7 @@ fn generate_chunks(
                         let base_y = prev_y + (new_y - prev_y) * t;
                         let arc_h = 80.0 * (4.0 * t * (1.0 - t));
                         let cy = (base_y + arc_h).max(min_coin_y);
-                        spawn_coin_at(&mut commands, cx, cy);
+                        spawn_coin_at(&mut commands, cx, cy, game_sprites.coin.clone());
                     }
                 }
                 1 => {
@@ -327,6 +338,7 @@ fn generate_chunks(
                             &mut commands,
                             start_x + i as f32 * 30.0,
                             line_y.max(min_coin_y),
+                            game_sprites.coin.clone(),
                         );
                     }
                 }
@@ -340,6 +352,7 @@ fn generate_chunks(
                             &mut commands,
                             stack_x,
                             (base + i as f32 * 30.0).max(min_coin_y),
+                            game_sprites.coin.clone(),
                         );
                     }
                 }
@@ -351,7 +364,7 @@ fn generate_chunks(
                         let cx = prev_x + (new_x - prev_x) * t;
                         let cy = prev_y.min(new_y) + COIN_FLOAT_HEIGHT
                             + i as f32 * 25.0;
-                        spawn_coin_at(&mut commands, cx, cy.max(min_coin_y));
+                        spawn_coin_at(&mut commands, cx, cy.max(min_coin_y), game_sprites.coin.clone());
                     }
                 }
                 _ => {
@@ -359,10 +372,10 @@ fn generate_chunks(
                     let mid_x = (prev_x + new_x) / 2.0;
                     let mid_y = (prev_y.max(new_y) + 60.0).max(min_coin_y + 30.0);
                     let r = 25.0;
-                    spawn_coin_at(&mut commands, mid_x, mid_y + r);
-                    spawn_coin_at(&mut commands, mid_x + r, mid_y);
-                    spawn_coin_at(&mut commands, mid_x, (mid_y - r).max(min_coin_y));
-                    spawn_coin_at(&mut commands, mid_x - r, mid_y);
+                    spawn_coin_at(&mut commands, mid_x, mid_y + r, game_sprites.coin.clone());
+                    spawn_coin_at(&mut commands, mid_x + r, mid_y, game_sprites.coin.clone());
+                    spawn_coin_at(&mut commands, mid_x, (mid_y - r).max(min_coin_y), game_sprites.coin.clone());
+                    spawn_coin_at(&mut commands, mid_x - r, mid_y, game_sprites.coin.clone());
                 }
             }
         }

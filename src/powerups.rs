@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use rand::Rng;
 
+use crate::audio::AudioHandles;
 use crate::constants::*;
 use crate::player::Player;
 use crate::state::GameState;
@@ -58,6 +59,7 @@ impl Plugin for PowerupsPlugin {
                 powerup_pickup_collision,
                 tick_speed_boost,
                 tick_triple_jump,
+                apply_powerup_tint,
             )
                 .chain()
                 .run_if(in_state(GameState::Playing)),
@@ -70,7 +72,14 @@ impl Plugin for PowerupsPlugin {
 // ---------------------------------------------------------------------------
 
 /// Spawn a random power-up pickup above a platform.
-pub fn spawn_powerup(commands: &mut Commands, x: f32, platform_y: f32) {
+pub fn spawn_powerup(
+    commands: &mut Commands,
+    x: f32,
+    platform_y: f32,
+    speed_img: Handle<Image>,
+    jump_img: Handle<Image>,
+    shield_img: Handle<Image>,
+) {
     let mut rng = rand::thread_rng();
     let kind = match rng.gen_range(0..3) {
         0 => PowerupKind::SpeedBoost,
@@ -78,16 +87,20 @@ pub fn spawn_powerup(commands: &mut Commands, x: f32, platform_y: f32) {
         _ => PowerupKind::Shield,
     };
 
-    let color = match kind {
-        PowerupKind::SpeedBoost => Color::srgb(0.3, 0.5, 1.0),  // blue
-        PowerupKind::TripleJump => Color::srgb(0.2, 0.9, 0.3),  // green
-        PowerupKind::Shield => Color::srgb(1.0, 0.85, 0.0),     // gold
+    let image = match kind {
+        PowerupKind::SpeedBoost => speed_img,
+        PowerupKind::TripleJump => jump_img,
+        PowerupKind::Shield => shield_img,
     };
 
     let y = platform_y + (PLATFORM_HEIGHT / 2.0) + COIN_FLOAT_HEIGHT + 10.0;
 
     commands.spawn((
-        Sprite::from_color(color, Vec2::splat(POWERUP_SIZE)),
+        Sprite {
+            image,
+            custom_size: Some(Vec2::splat(POWERUP_SIZE)),
+            ..default()
+        },
         Transform::from_xyz(x, y, POWERUP_Z),
         kind,
         PowerupBob {
@@ -118,6 +131,7 @@ fn powerup_pickup_collision(
     mut commands: Commands,
     player_query: Query<(Entity, &Transform), With<Player>>,
     powerup_query: Query<(Entity, &Transform, &PowerupKind)>,
+    audio_handles: Option<Res<AudioHandles>>,
 ) {
     let Ok((player_entity, player_tf)) = player_query.single() else {
         return;
@@ -135,6 +149,13 @@ fn powerup_pickup_collision(
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
             commands.entity(pu_entity).despawn();
+
+            // Play power-up SFX
+            if let Some(ref handles) = audio_handles {
+                if let Some(ref handle) = handles.powerup {
+                    crate::audio::spawn_sfx(&mut commands, handle);
+                }
+            }
 
             match kind {
                 PowerupKind::SpeedBoost => {
@@ -188,4 +209,31 @@ fn tick_triple_jump(
     if tj.timer.is_finished() {
         commands.entity(entity).remove::<TripleJump>();
     }
+}
+
+/// Tint the player sprite based on active power-ups.
+fn apply_powerup_tint(
+    mut query: Query<
+        (&mut Sprite, Option<&SpeedBoost>, Option<&TripleJump>, Option<&Shield>),
+        With<Player>,
+    >,
+) {
+    let Ok((mut sprite, speed, triple, shield)) = query.single_mut() else {
+        return;
+    };
+
+    // Priority: shield (gold) > speed (blue) > triple jump (green) > normal (white)
+    let tint = if shield.is_some() {
+        Color::srgb(1.0, 0.9, 0.4) // gold tint
+    } else if speed.is_some() {
+        Color::srgb(0.6, 0.8, 1.0) // blue tint
+    } else if triple.is_some() {
+        Color::srgb(0.6, 1.0, 0.7) // green tint
+    } else {
+        Color::WHITE
+    };
+
+    // Preserve alpha (invincibility flash uses alpha)
+    let alpha = sprite.color.to_srgba().alpha;
+    sprite.color = tint.with_alpha(alpha);
 }

@@ -32,18 +32,19 @@ impl Plugin for CollectiblesPlugin {
 }
 
 /// Spawn a coin floating above a platform. Called from level generation.
-pub fn spawn_coin(commands: &mut Commands, x: f32, platform_y: f32) {
+pub fn spawn_coin(commands: &mut Commands, x: f32, platform_y: f32, image: Handle<Image>) {
     let y = platform_y + (PLATFORM_HEIGHT / 2.0) + COIN_FLOAT_HEIGHT;
-    spawn_coin_at(commands, x, y);
+    spawn_coin_at(commands, x, y, image);
 }
 
 /// Spawn a coin at an exact world position (for mid-air coins).
-pub fn spawn_coin_at(commands: &mut Commands, x: f32, y: f32) {
+pub fn spawn_coin_at(commands: &mut Commands, x: f32, y: f32, image: Handle<Image>) {
     commands.spawn((
-        Sprite::from_color(
-            Color::srgb(1.0, 0.85, 0.0), // gold/yellow
-            Vec2::new(COIN_SIZE, COIN_SIZE),
-        ),
+        Sprite {
+            image,
+            custom_size: Some(Vec2::new(COIN_SIZE, COIN_SIZE)),
+            ..default()
+        },
         Transform::from_xyz(x, y, COIN_Z),
         Coin,
         CoinBob {
@@ -54,14 +55,15 @@ pub fn spawn_coin_at(commands: &mut Commands, x: f32, y: f32) {
 }
 
 /// Spawn a coin as a child of a moving platform (local coordinates).
-pub fn spawn_coin_on_moving(parent: &mut ChildSpawnerCommands) {
+pub fn spawn_coin_on_moving(parent: &mut ChildSpawnerCommands, image: Handle<Image>) {
     let local_y = (PLATFORM_HEIGHT / 2.0) + COIN_FLOAT_HEIGHT;
 
     parent.spawn((
-        Sprite::from_color(
-            Color::srgb(1.0, 0.85, 0.0),
-            Vec2::new(COIN_SIZE, COIN_SIZE),
-        ),
+        Sprite {
+            image,
+            custom_size: Some(Vec2::new(COIN_SIZE, COIN_SIZE)),
+            ..default()
+        },
         Transform::from_xyz(0.0, local_y, COIN_Z),
         Coin,
         CoinBob {
@@ -120,7 +122,7 @@ fn coin_player_collision(
             // Play collect SFX
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.collect {
-                    commands.spawn(AudioPlayer::new(handle.clone()));
+                    crate::audio::spawn_sfx(&mut commands, handle);
                 }
             }
         }

@@ -13,6 +13,7 @@ mod parallax;
 mod particles;
 mod player;
 mod powerups;
+mod sprites;
 mod state;
 mod transition;
 
@@ -43,6 +44,7 @@ fn main() {
         .add_plugins(collectibles::CollectiblesPlugin)
         .add_plugins(hazards::HazardsPlugin)
         .add_plugins(powerups::PowerupsPlugin)
+        .add_plugins(sprites::SpritesPlugin)
         .add_plugins(audio::GameAudioPlugin)
         .add_plugins(highscore::HighScorePlugin)
         .add_plugins(transition::TransitionPlugin)

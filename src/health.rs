@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use crate::animation::PlayerAnimState;
+use crate::audio::AudioHandles;
 use crate::constants::*;
 use crate::player::Player;
 use crate::powerups::Shield;
@@ -68,6 +69,7 @@ fn apply_damage(
         (Entity, &mut Health, Option<&Invincible>, Option<&DeathTimer>, Option<&mut Shield>),
         With<Player>,
     >,
+    audio_handles: Option<Res<AudioHandles>>,
 ) {
     let Ok((entity, mut health, invincible, death_timer, mut shield)) = query.single_mut()
     else {
@@ -99,6 +101,12 @@ fn apply_damage(
 
         if health.current <= 0 {
             death_events.write(PlayerDeathEvent);
+            // Play death SFX (quieter than other effects)
+            if let Some(ref handles) = audio_handles {
+                if let Some(ref handle) = handles.death {
+                    crate::audio::spawn_sfx_at_volume(&mut commands, handle, 0.35);
+                }
+            }
             // Start death animation instead of immediate GameOver
             commands.entity(entity).insert((
                 DeathTimer {

@@ -47,28 +47,30 @@ impl Plugin for HazardsPlugin {
 // ---------------------------------------------------------------------------
 
 /// Spawn a spike on top of a platform. Called from level generation.
-pub fn spawn_spike(commands: &mut Commands, x: f32, platform_y: f32) {
+pub fn spawn_spike(commands: &mut Commands, x: f32, platform_y: f32, image: Handle<Image>) {
     let spawn_y = platform_y + (PLATFORM_HEIGHT / 2.0) + (SPIKE_HEIGHT / 2.0);
 
     commands.spawn((
-        Sprite::from_color(
-            Color::srgb(0.6, 0.1, 0.1), // dark red
-            Vec2::new(SPIKE_WIDTH, SPIKE_HEIGHT),
-        ),
+        Sprite {
+            image,
+            custom_size: Some(Vec2::new(SPIKE_WIDTH, SPIKE_HEIGHT)),
+            ..default()
+        },
         Transform::from_xyz(x, spawn_y, SPIKE_Z),
         Spike,
     ));
 }
 
 /// Spawn a spike as a child of a moving platform (local coordinates).
-pub fn spawn_spike_on_moving(parent: &mut ChildSpawnerCommands) {
+pub fn spawn_spike_on_moving(parent: &mut ChildSpawnerCommands, image: Handle<Image>) {
     let local_y = (PLATFORM_HEIGHT / 2.0) + (SPIKE_HEIGHT / 2.0);
 
     parent.spawn((
-        Sprite::from_color(
-            Color::srgb(0.6, 0.1, 0.1),
-            Vec2::new(SPIKE_WIDTH, SPIKE_HEIGHT),
-        ),
+        Sprite {
+            image,
+            custom_size: Some(Vec2::new(SPIKE_WIDTH, SPIKE_HEIGHT)),
+            ..default()
+        },
         Transform::from_xyz(0.0, local_y, SPIKE_Z),
         Spike,
     ));
@@ -79,16 +81,17 @@ pub fn spawn_spike_on_moving(parent: &mut ChildSpawnerCommands) {
 // ---------------------------------------------------------------------------
 
 /// Spawn a saw that patrols on top of a platform.
-pub fn spawn_saw(commands: &mut Commands, x: f32, platform_y: f32, platform_width: f32) {
+pub fn spawn_saw(commands: &mut Commands, x: f32, platform_y: f32, platform_width: f32, image: Handle<Image>) {
     let spawn_y = platform_y + (PLATFORM_HEIGHT / 2.0) + (SAW_SIZE / 2.0);
     let half_plat = platform_width / 2.0;
     let saw_half = SAW_SIZE / 2.0;
 
     commands.spawn((
-        Sprite::from_color(
-            Color::srgb(0.7, 0.7, 0.7), // metallic grey
-            Vec2::splat(SAW_SIZE),
-        ),
+        Sprite {
+            image,
+            custom_size: Some(Vec2::splat(SAW_SIZE)),
+            ..default()
+        },
         Transform::from_xyz(x, spawn_y, SAW_Z),
         Saw {
             left_bound: x - half_plat + saw_half,
@@ -99,16 +102,17 @@ pub fn spawn_saw(commands: &mut Commands, x: f32, platform_y: f32, platform_widt
 }
 
 /// Spawn a saw as a child of a moving platform (local coordinates).
-pub fn spawn_saw_on_moving(parent: &mut ChildSpawnerCommands, platform_width: f32) {
+pub fn spawn_saw_on_moving(parent: &mut ChildSpawnerCommands, platform_width: f32, image: Handle<Image>) {
     let local_y = (PLATFORM_HEIGHT / 2.0) + (SAW_SIZE / 2.0);
     let half_plat = platform_width / 2.0;
     let saw_half = SAW_SIZE / 2.0;
 
     parent.spawn((
-        Sprite::from_color(
-            Color::srgb(0.7, 0.7, 0.7),
-            Vec2::splat(SAW_SIZE),
-        ),
+        Sprite {
+            image,
+            custom_size: Some(Vec2::splat(SAW_SIZE)),
+            ..default()
+        },
         Transform::from_xyz(0.0, local_y, SAW_Z),
         Saw {
             left_bound: -half_plat + saw_half,
@@ -147,25 +151,26 @@ fn saw_animate(time: Res<Time>, mut query: Query<&mut Transform, With<Saw>>) {
 // ---------------------------------------------------------------------------
 
 /// Spawn a lava pool at a ground gap position.
-pub fn spawn_lava(commands: &mut Commands, x: f32, width: f32) {
+pub fn spawn_lava(commands: &mut Commands, x: f32, width: f32, image: Handle<Image>) {
     let y = GROUND_Y - (GROUND_HEIGHT / 2.0) + (LAVA_HEIGHT / 2.0) - 5.0;
 
     commands.spawn((
-        Sprite::from_color(
-            Color::srgb(1.0, 0.3, 0.0), // bright orange-red
-            Vec2::new(width, LAVA_HEIGHT),
-        ),
+        Sprite {
+            image,
+            custom_size: Some(Vec2::new(width, LAVA_HEIGHT)),
+            ..default()
+        },
         Transform::from_xyz(x, y, LAVA_Z),
         Lava,
     ));
 }
 
-/// Pulsing glow for lava — oscillate brightness.
+/// Pulsing glow for lava — oscillate brightness via tint.
 fn lava_animate(time: Res<Time>, mut query: Query<&mut Sprite, With<Lava>>) {
     let t = time.elapsed_secs();
     let pulse = 0.85 + 0.15 * (t * 3.0).sin();
     for mut sprite in &mut query {
-        sprite.color = Color::srgb(1.0 * pulse, 0.3 * pulse, 0.0);
+        sprite.color = Color::srgba(1.0, pulse, pulse, 1.0);
     }
 }
 
@@ -206,7 +211,7 @@ fn spike_player_collision(
 
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.hit {
-                    commands.spawn(AudioPlayer::new(handle.clone()));
+                    crate::audio::spawn_sfx(&mut commands, handle);
                 }
             }
 
@@ -247,7 +252,7 @@ fn saw_player_collision(
 
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.hit {
-                    commands.spawn(AudioPlayer::new(handle.clone()));
+                    crate::audio::spawn_sfx(&mut commands, handle);
                 }
             }
 
