@@ -1,0 +1,10 @@
+[package]
+name = "my_sidescroller"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.18"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
