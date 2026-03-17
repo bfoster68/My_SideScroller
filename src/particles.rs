@@ -45,6 +45,7 @@ fn detect_jump_particles(
     mut commands: Commands,
     mut prev_airborne: ResMut<PrevAirborne>,
     query: Query<(&Transform, &Grounded, &Velocity), With<Player>>,
+    existing_particles: Query<(), With<Particle>>,
 ) {
     let Ok((tf, grounded, velocity)) = query.single() else {
         return;
@@ -53,7 +54,7 @@ fn detect_jump_particles(
     let is_airborne = !grounded.on_ground;
 
     // Just became airborne and moving upward = jump
-    if is_airborne && !prev_airborne.0 && velocity.0.y > 0.0 {
+    if is_airborne && !prev_airborne.0 && velocity.0.y > 0.0 && existing_particles.iter().count() < MAX_PARTICLES {
         spawn_burst(
             &mut commands,
             Vec2::new(tf.translation.x, tf.translation.y - PLAYER_HEIGHT / 2.0),
@@ -71,13 +72,14 @@ fn detect_land_particles(
     mut commands: Commands,
     mut prev_grounded: ResMut<PrevGrounded>,
     query: Query<(&Transform, &Grounded), With<Player>>,
+    existing_particles: Query<(), With<Particle>>,
 ) {
     let Ok((tf, grounded)) = query.single() else {
         return;
     };
 
     // Just became grounded = landing
-    if grounded.on_ground && !prev_grounded.0 {
+    if grounded.on_ground && !prev_grounded.0 && existing_particles.iter().count() < MAX_PARTICLES {
         spawn_burst(
             &mut commands,
             Vec2::new(tf.translation.x, tf.translation.y - PLAYER_HEIGHT / 2.0),
@@ -138,6 +140,9 @@ fn spawn_burst(
     color: Color,
     upward_bias: bool,
 ) {
+    // Note: particle cap is checked by callers or naturally limited by short lifetimes.
+    // The MAX_PARTICLES constant exists for reference but burst spawns are small enough
+    // that they won't exceed it under normal gameplay.
     let mut rng = rand::thread_rng();
 
     for _ in 0..count {

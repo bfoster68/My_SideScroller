@@ -1,12 +1,14 @@
 use bevy::prelude::*;
 
 use crate::animation::{AnimationTimer, CurrentAnim, FacingDirection, PlayerAnimState, SpriteSheets};
+use crate::checkpoint::CheckpointData;
 use crate::constants::*;
 use crate::enemies::Enemy;
 use crate::hazards::{Lava, Saw, Spike};
 use crate::health::{DeathTimer, Health, Invincible};
 use crate::level::{Platform, PlatformSize, PlatformVelocity};
 use crate::powerups::{Shield, SpeedBoost, TripleJump};
+use crate::save::ResumeFromCheckpoint;
 use crate::state::GameState;
 
 /// System set for player movement — other modules can schedule `.after(PlayerMovementSet)`.
@@ -120,7 +122,7 @@ fn spawn_player_if_missing(
 }
 
 fn player_input(
-    keyboard: Res<ButtonInput<KeyCode>>,
+    game_input: Res<crate::input::GameInput>,
     time: Res<Time>,
     mut query: Query<
         (
@@ -157,15 +159,8 @@ fn player_input(
     // Determine speed multiplier from active power-ups
     let speed_mult = speed_boost.map_or(1.0, |b| b.multiplier);
 
-    // Horizontal movement
-    let mut dir_x = 0.0;
-    if keyboard.pressed(KeyCode::KeyA) || keyboard.pressed(KeyCode::ArrowLeft) {
-        dir_x -= 1.0;
-    }
-    if keyboard.pressed(KeyCode::KeyD) || keyboard.pressed(KeyCode::ArrowRight) {
-        dir_x += 1.0;
-    }
-    velocity.0.x = dir_x * PLAYER_SPEED * speed_mult;
+    // Horizontal movement (supports analog from gamepad)
+    velocity.0.x = game_input.move_x * PLAYER_SPEED * speed_mult;
 
     // Determine max jumps (triple jump power-up)
     let max_jumps = if triple_jump.is_some() {
@@ -186,7 +181,7 @@ fn player_input(
         grounded.on_ground || grounded.coyote_timer > 0.0 || jump_counter.jumps_remaining > 0;
 
     // Jump initiation
-    if can_jump && keyboard.just_pressed(KeyCode::Space) {
+    if can_jump && game_input.jump_pressed {
         velocity.0.y = JUMP_FORCE;
         grounded.coyote_timer = 0.0;
         grounded.on_ground = false;
@@ -197,7 +192,7 @@ fn player_input(
     }
 
     // Variable jump height — release early for a short hop
-    if keyboard.just_released(KeyCode::Space) && jump_held.0 {
+    if game_input.jump_released && jump_held.0 {
         jump_held.0 = false;
         if velocity.0.y > JUMP_FORCE_MIN {
             velocity.0.y = JUMP_FORCE_MIN;
@@ -454,11 +449,15 @@ fn reset_player_on_game_over(
 }
 
 /// Reset score, coins, and player position when starting a new game.
+/// If ResumeFromCheckpoint is present, restore from checkpoint instead of resetting.
 /// Level cleanup (chunk_tracker, difficulty, entity despawn) is handled
 /// by reset_level_if_needed in level.rs.
 fn reset_score_on_play(
+    mut commands: Commands,
     mut score: ResMut<Score>,
     mut coins: ResMut<Coins>,
+    checkpoint: Res<CheckpointData>,
+    resume: Option<Res<ResumeFromCheckpoint>>,
     mut query: Query<
         (
             &mut Transform,
@@ -469,17 +468,38 @@ fn reset_score_on_play(
         With<Player>,
     >,
 ) {
-    score.value = 0;
-    coins.count = 0;
+    if resume.is_some() {
+        // Resume from checkpoint — restore score and position
+        score.value = checkpoint.last_checkpoint_score;
+        coins.count = 0;
 
-    if let Ok((mut transform, mut velocity, mut grounded, mut jump_counter)) =
-        query.single_mut()
-    {
-        transform.translation.x = SPAWN_X;
-        transform.translation.y = SPAWN_Y;
-        velocity.0 = Vec2::ZERO;
-        grounded.on_ground = true;
-        grounded.coyote_timer = 0.0;
-        jump_counter.jumps_remaining = MAX_JUMPS;
+        if let Ok((mut transform, mut velocity, mut grounded, mut jump_counter)) =
+            query.single_mut()
+        {
+            transform.translation.x = checkpoint.checkpoint_x;
+            transform.translation.y = checkpoint.checkpoint_y;
+            velocity.0 = Vec2::ZERO;
+            grounded.on_ground = true;
+            grounded.coyote_timer = 0.0;
+            jump_counter.jumps_remaining = MAX_JUMPS;
+        }
+
+        // Consume the resume marker
+        commands.remove_resource::<ResumeFromCheckpoint>();
+    } else {
+        // Fresh start
+        score.value = 0;
+        coins.count = 0;
+
+        if let Ok((mut transform, mut velocity, mut grounded, mut jump_counter)) =
+            query.single_mut()
+        {
+            transform.translation.x = SPAWN_X;
+            transform.translation.y = SPAWN_Y;
+            velocity.0 = Vec2::ZERO;
+            grounded.on_ground = true;
+            grounded.coyote_timer = 0.0;
+            jump_counter.jumps_remaining = MAX_JUMPS;
+        }
     }
 }

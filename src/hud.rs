@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 
 use crate::audio::GameSettings;
+use crate::checkpoint::CheckpointData;
+use crate::constants::*;
 use crate::health::Health;
 use crate::highscore::{HighScore, HighScoreSet, NewHighScoreFlag};
 use crate::player::{Coins, Player, Score};
@@ -153,8 +155,14 @@ fn update_hud(
 // Main Menu
 // ---------------------------------------------------------------------------
 
-fn spawn_menu_overlay(mut commands: Commands, high_score: Res<HighScore>, mut menu_sel: ResMut<MenuSelection>) {
+fn spawn_menu_overlay(
+    mut commands: Commands,
+    high_score: Res<HighScore>,
+    checkpoint: Res<CheckpointData>,
+    mut menu_sel: ResMut<MenuSelection>,
+) {
     menu_sel.index = 0;
+    let has_checkpoint = checkpoint.last_checkpoint_score > 0;
 
     commands
         .spawn((
@@ -189,15 +197,27 @@ fn spawn_menu_overlay(mut commands: Commands, high_score: Res<HighScore>, mut me
             // Spacer
             parent.spawn(Node { height: Val::Px(10.0), ..default() });
 
-            // Menu items
-            let items = ["Play", "Settings", "Quit"];
-            for (i, label) in items.iter().enumerate() {
+            // Menu items — conditionally include Continue
+            let mut idx = 0;
+            if has_checkpoint {
                 parent.spawn((
-                    MenuItem(i),
+                    MenuItem(idx),
+                    Text::new(format!("Continue (Score: {})", checkpoint.last_checkpoint_score)),
+                    TextFont { font_size: 28.0, ..default() },
+                    TextColor(COLOR_SELECTED),
+                ));
+                idx += 1;
+            }
+
+            let items = ["New Game", "Settings", "Quit"];
+            for label in &items {
+                parent.spawn((
+                    MenuItem(idx),
                     Text::new(*label),
                     TextFont { font_size: 28.0, ..default() },
-                    TextColor(if i == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
+                    TextColor(if idx == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
                 ));
+                idx += 1;
             }
 
             // Spacer
@@ -313,9 +333,26 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
                 ));
             }
 
-            // Back option
+            // Resolution
+            let res_label = RESOLUTION_LABELS[settings.resolution_index.min(RESOLUTION_LABELS.len() - 1)];
             parent.spawn((
                 SettingsItem(3),
+                Text::new(format!("Resolution: {}", res_label)),
+                TextFont { font_size: 24.0, ..default() },
+                TextColor(COLOR_UNSELECTED),
+            ));
+
+            // Fullscreen
+            parent.spawn((
+                SettingsItem(4),
+                Text::new(format!("Fullscreen: {}", if settings.fullscreen { "ON" } else { "OFF" })),
+                TextFont { font_size: 24.0, ..default() },
+                TextColor(COLOR_UNSELECTED),
+            ));
+
+            // Back option
+            parent.spawn((
+                SettingsItem(5),
                 Text::new("Back"),
                 TextFont { font_size: 24.0, ..default() },
                 TextColor(COLOR_UNSELECTED),
@@ -336,17 +373,29 @@ fn update_settings_display(
     settings_sel: Res<SettingsSelection>,
     mut query: Query<(&SettingsItem, &mut Text, &mut TextColor)>,
 ) {
-    let labels = ["Master Volume", "SFX Volume", "Music Volume"];
-    let values = [settings.master_volume, settings.sfx_volume, settings.music_volume];
+    let vol_labels = ["Master Volume", "SFX Volume", "Music Volume"];
+    let vol_values = [settings.master_volume, settings.sfx_volume, settings.music_volume];
 
     for (item, mut text, mut color) in &mut query {
         let is_selected = item.0 == settings_sel.index;
         color.0 = if is_selected { COLOR_SELECTED } else { COLOR_UNSELECTED };
 
-        if item.0 < 3 {
-            let arrow = if is_selected { "< " } else { "  " };
-            let arrow_r = if is_selected { " >" } else { "  " };
-            **text = format!("{}: {}{}{}", labels[item.0], arrow, volume_bar(values[item.0]), arrow_r);
+        let arrow_l = if is_selected { "< " } else { "  " };
+        let arrow_r = if is_selected { " >" } else { "  " };
+
+        match item.0 {
+            0..=2 => {
+                **text = format!("{}: {}{}{}", vol_labels[item.0], arrow_l, volume_bar(vol_values[item.0]), arrow_r);
+            }
+            3 => {
+                let res_label = RESOLUTION_LABELS[settings.resolution_index.min(RESOLUTION_LABELS.len() - 1)];
+                **text = format!("Resolution: {}{}{}", arrow_l, res_label, arrow_r);
+            }
+            4 => {
+                let val = if settings.fullscreen { "ON" } else { "OFF" };
+                **text = format!("Fullscreen: {}{}{}", arrow_l, val, arrow_r);
+            }
+            _ => {} // Back — no dynamic content
         }
     }
 }

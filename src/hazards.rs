@@ -52,6 +52,7 @@ pub struct TimedTrap {
     pub active: bool,
     pub on_duration: f32,
     pub off_duration: f32,
+    #[allow(dead_code)]
     pub phase_offset: f32,
 }
 

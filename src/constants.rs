@@ -184,3 +184,18 @@ pub const TIMED_TRAP_ON_DURATION: f32 = 1.5;
 pub const TIMED_TRAP_OFF_DURATION: f32 = 2.0;
 pub const TIMED_TRAP_WARNING: f32 = 0.3;
 pub const TIMED_TRAP_DAMAGE: i32 = 1;
+
+// Save system
+pub const SAVE_FILE: &str = "save.json";
+
+// Screen resolution options
+pub const RESOLUTIONS: [(u32, u32); 3] = [(1280, 720), (1920, 1080), (2560, 1440)];
+pub const RESOLUTION_LABELS: [&str; 3] = ["1280x720", "1920x1080", "2560x1440"];
+
+// Performance
+pub const MAX_PARTICLES: usize = 200;
+
+// Gamepad
+pub const GAMEPAD_DEADZONE: f32 = 0.2;
+pub const STICK_NAV_INITIAL_DELAY: f32 = 0.3;
+pub const STICK_NAV_REPEAT_DELAY: f32 = 0.15;

@@ -8,12 +8,14 @@ use crate::state::GameState;
 #[derive(Component)]
 struct BgMusic;
 
-/// Global game settings — volume, etc.
+/// Global game settings — volume, display, etc.
 #[derive(Resource)]
 pub struct GameSettings {
-    pub master_volume: f32, // 0.0 to 1.0
-    pub sfx_volume: f32,    // 0.0 to 1.0
-    pub music_volume: f32,  // 0.0 to 1.0
+    pub master_volume: f32,    // 0.0 to 1.0
+    pub sfx_volume: f32,       // 0.0 to 1.0
+    pub music_volume: f32,     // 0.0 to 1.0
+    pub resolution_index: usize, // index into RESOLUTIONS
+    pub fullscreen: bool,
 }
 
 impl Default for GameSettings {
@@ -22,12 +24,15 @@ impl Default for GameSettings {
             master_volume: crate::constants::DEFAULT_MASTER_VOLUME,
             sfx_volume: crate::constants::DEFAULT_SFX_VOLUME,
             music_volume: crate::constants::DEFAULT_MUSIC_VOLUME,
+            resolution_index: 0,
+            fullscreen: false,
         }
     }
 }
 
 impl GameSettings {
     /// Effective volume for sound effects.
+    #[allow(dead_code)]
     pub fn effective_sfx_volume(&self) -> f32 {
         self.master_volume * self.sfx_volume
     }

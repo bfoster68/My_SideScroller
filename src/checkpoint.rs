@@ -1,11 +1,14 @@
 use bevy::prelude::*;
 
+use crate::audio::GameSettings;
 use crate::constants::*;
+use crate::highscore::HighScore;
 use crate::player::{Player, Score};
+use crate::save::ResumeFromCheckpoint;
 use crate::state::GameState;
 
 /// Tracks checkpoint and section progression data.
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Clone)]
 pub struct CheckpointData {
     pub last_checkpoint_score: u32,
     pub checkpoint_x: f32,
@@ -13,6 +16,7 @@ pub struct CheckpointData {
     pub section: u32,
     pub initialized: bool,
 }
+
 
 /// Marker for checkpoint flag entities in the world.
 #[derive(Component)]
@@ -95,12 +99,19 @@ impl Plugin for CheckpointPlugin {
     }
 }
 
-/// Reset checkpoint data at start of a new game.
+/// Reset checkpoint data at start of a new game, unless resuming from checkpoint.
 fn reset_checkpoint_data(
     mut data: ResMut<CheckpointData>,
     mut commands: Commands,
     flags: Query<Entity, With<CheckpointFlag>>,
+    resume: Option<Res<ResumeFromCheckpoint>>,
 ) {
+    // If resuming from checkpoint, don't reset — just mark as initialized
+    if resume.is_some() {
+        data.initialized = true;
+        return;
+    }
+
     // Only reset if we're coming from GameOver (data was initialized)
     if data.initialized {
         *data = CheckpointData::default();
@@ -118,6 +129,8 @@ fn check_checkpoint(
     mut data: ResMut<CheckpointData>,
     player_query: Query<&Transform, With<Player>>,
     audio_handles: Option<Res<crate::audio::AudioHandles>>,
+    settings: Res<GameSettings>,
+    high_score: Res<HighScore>,
 ) {
     if score.value < data.last_checkpoint_score + CHECKPOINT_INTERVAL {
         return;
@@ -143,6 +156,9 @@ fn check_checkpoint(
             crate::audio::spawn_sfx(&mut commands, handle);
         }
     }
+
+    // Save checkpoint progress to disk
+    crate::save::save_to_disk(&settings, &high_score, &data);
 }
 
 /// Check if we've entered a new section.

@@ -4,16 +4,19 @@ mod camera;
 mod checkpoint;
 mod collectibles;
 mod constants;
+mod debug;
 mod enemies;
 mod hazards;
 mod health;
 mod highscore;
 mod hud;
+mod input;
 mod level;
 mod parallax;
 mod particles;
 mod player;
 mod powerups;
+mod save;
 mod sprites;
 mod state;
 mod transition;
@@ -31,6 +34,9 @@ fn main() {
             ..default()
         }))
         .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.2)))
+        // Core infrastructure (order matters: save loads data, input runs in PreUpdate)
+        .add_plugins(input::InputPlugin)
+        .add_plugins(save::SavePlugin)
         // Game plugins
         .add_plugins(state::StatePlugin)
         .add_plugins(camera::CameraPlugin)
@@ -50,5 +56,6 @@ fn main() {
         .add_plugins(highscore::HighScorePlugin)
         .add_plugins(transition::TransitionPlugin)
         .add_plugins(checkpoint::CheckpointPlugin)
+        .add_plugins(debug::DebugPlugin)
         .run();
 }
