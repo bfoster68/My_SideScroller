@@ -145,3 +145,42 @@ pub const SHIELD_HITS: i32 = 1;
 
 // Screen transitions
 pub const FADE_DURATION: f32 = 0.3;
+
+// Volume settings
+pub const VOLUME_STEP: f32 = 0.1;
+pub const DEFAULT_MASTER_VOLUME: f32 = 1.0;
+pub const DEFAULT_SFX_VOLUME: f32 = 1.0;
+pub const DEFAULT_MUSIC_VOLUME: f32 = 1.0;
+
+// Checkpoints & Sections
+pub const CHECKPOINT_INTERVAL: u32 = 500;
+pub const SECTION_INTERVAL: u32 = 1000;
+pub const SECTION_BANNER_DURATION: f32 = 2.0;
+pub const SECTION_BONUS_SCORE: u32 = 250;
+
+// Charging enemy
+pub const CHARGING_ENEMY_SPEED: f32 = 240.0;
+pub const CHARGING_DETECT_RANGE: f32 = 300.0;
+pub const CHARGING_WIND_TIME: f32 = 0.3;
+pub const CHARGING_DURATION: f32 = 1.5;
+pub const CHARGING_RECOVERY: f32 = 0.5;
+pub const CHARGING_ENEMY_WIDTH: f32 = 44.0;
+pub const CHARGING_ENEMY_HEIGHT: f32 = 48.0;
+
+// Flying ranged enemy
+pub const FLYING_RANGED_FIRE_INTERVAL: f32 = 2.5;
+pub const FLYING_RANGED_PROJ_SPEED: f32 = 180.0;
+
+// Falling boulders
+pub const BOULDER_SIZE: f32 = 40.0;
+pub const BOULDER_GRAVITY: f32 = -600.0;
+pub const BOULDER_DAMAGE: i32 = 1;
+pub const BOULDER_SPAWN_INTERVAL: f32 = 3.0;
+pub const BOULDER_WARNING_TIME: f32 = 0.5;
+pub const BOULDER_Z: f32 = 0.8;
+
+// Timed traps
+pub const TIMED_TRAP_ON_DURATION: f32 = 1.5;
+pub const TIMED_TRAP_OFF_DURATION: f32 = 2.0;
+pub const TIMED_TRAP_WARNING: f32 = 0.3;
+pub const TIMED_TRAP_DAMAGE: i32 = 1;

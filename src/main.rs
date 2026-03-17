@@ -1,6 +1,7 @@
 mod animation;
 mod audio;
 mod camera;
+mod checkpoint;
 mod collectibles;
 mod constants;
 mod enemies;
@@ -48,5 +49,6 @@ fn main() {
         .add_plugins(audio::GameAudioPlugin)
         .add_plugins(highscore::HighScorePlugin)
         .add_plugins(transition::TransitionPlugin)
+        .add_plugins(checkpoint::CheckpointPlugin)
         .run();
 }

@@ -44,6 +44,26 @@ pub struct Projectile {
     pub lifetime: Timer,
 }
 
+/// Charging enemy — patrols normally until player is in range, then charges.
+#[derive(Component)]
+pub struct ChargingEnemy {
+    pub state: ChargeState,
+    pub charge_direction: f32,
+    pub state_timer: Timer,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum ChargeState {
+    Idle,
+    WindingUp,
+    Charging,
+    Recovering,
+}
+
+/// Flying ranged enemy — hovers and fires downward projectiles.
+#[derive(Component)]
+pub struct FlyingRangedEnemy;
+
 pub struct EnemiesPlugin;
 
 impl Plugin for EnemiesPlugin {
@@ -53,6 +73,8 @@ impl Plugin for EnemiesPlugin {
             (
                 enemy_patrol,
                 flying_enemy_movement,
+                charging_enemy_behavior,
+                flying_ranged_fire,
                 shooter_fire,
                 projectile_update,
                 enemy_player_collision,
@@ -121,10 +143,14 @@ pub fn spawn_enemy_on_moving(parent: &mut ChildSpawnerCommands, platform_width: 
     ));
 }
 
-/// Move enemies back and forth within their patrol bounds.
+/// Move walking enemies back and forth within their patrol bounds.
+/// Excludes charging enemies (they have their own behavior system).
 fn enemy_patrol(
     time: Res<Time>,
-    mut query: Query<(&mut Transform, &mut Patrol, &mut Sprite), (With<Enemy>, Without<FlyingEnemy>, Without<ShooterEnemy>)>,
+    mut query: Query<
+        (&mut Transform, &mut Patrol, &mut Sprite),
+        (With<Enemy>, Without<FlyingEnemy>, Without<ShooterEnemy>, Without<ChargingEnemy>, Without<FlyingRangedEnemy>),
+    >,
 ) {
     for (mut transform, mut patrol, mut sprite) in &mut query {
         transform.translation.x += patrol.direction * ENEMY_SPEED * time.delta_secs();
@@ -147,7 +173,7 @@ fn enemy_patrol(
 
 /// Spawn a flying enemy above a platform position.
 pub fn spawn_flying_enemy(commands: &mut Commands, x: f32, y: f32, image: Handle<Image>) {
-    let hover_y = y + 80.0; // floats well above the platform
+    let hover_y = y + 80.0;
 
     commands.spawn((
         Sprite {
@@ -165,7 +191,7 @@ pub fn spawn_flying_enemy(commands: &mut Commands, x: f32, y: f32, image: Handle
     ));
 }
 
-/// Sine-wave oscillation for flying enemies.
+/// Sine-wave oscillation for flying enemies (including flying ranged).
 fn flying_enemy_movement(
     time: Res<Time>,
     mut query: Query<(&mut Transform, &FlyingEnemy)>,
@@ -208,7 +234,7 @@ pub fn spawn_shooter_enemy(
 fn shooter_fire(
     mut commands: Commands,
     time: Res<Time>,
-    mut query: Query<(&GlobalTransform, &mut ShootTimer), With<ShooterEnemy>>,
+    mut query: Query<(&GlobalTransform, &mut ShootTimer), (With<ShooterEnemy>, Without<FlyingRangedEnemy>)>,
     player_query: Query<&Transform, With<Player>>,
     game_sprites: Res<GameSprites>,
     audio_handles: Option<Res<AudioHandles>>,
@@ -222,7 +248,6 @@ fn shooter_fire(
 
         if shoot_timer.timer.just_finished() {
             let shooter_pos = shooter_gtf.translation();
-            // Direction toward the player
             let dir = Vec2::new(
                 player_tf.translation.x - shooter_pos.x,
                 player_tf.translation.y - shooter_pos.y,
@@ -242,7 +267,189 @@ fn shooter_fire(
                 },
             ));
 
-            // Play shoot SFX
+            if let Some(ref handles) = audio_handles {
+                if let Some(ref handle) = handles.shoot {
+                    crate::audio::spawn_sfx(&mut commands, handle);
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Charging Enemy
+// ---------------------------------------------------------------------------
+
+/// Spawn a charging enemy on a platform.
+pub fn spawn_charging_enemy(
+    commands: &mut Commands,
+    platform_x: f32,
+    platform_y: f32,
+    platform_width: f32,
+    image: Handle<Image>,
+) {
+    let half_plat = platform_width / 2.0;
+    let enemy_half = CHARGING_ENEMY_WIDTH / 2.0;
+    let left = platform_x - half_plat + enemy_half;
+    let right = platform_x + half_plat - enemy_half;
+    let spawn_y = platform_y + (PLATFORM_HEIGHT / 2.0) + (CHARGING_ENEMY_HEIGHT / 2.0);
+
+    commands.spawn((
+        Sprite {
+            image,
+            custom_size: Some(Vec2::new(CHARGING_ENEMY_WIDTH, CHARGING_ENEMY_HEIGHT)),
+            ..default()
+        },
+        Transform::from_xyz(platform_x, spawn_y, ENEMY_Z),
+        Enemy,
+        Patrol {
+            left_bound: left,
+            right_bound: right,
+            direction: 1.0,
+        },
+        ChargingEnemy {
+            state: ChargeState::Idle,
+            charge_direction: 1.0,
+            state_timer: Timer::from_seconds(0.0, TimerMode::Once),
+        },
+    ));
+}
+
+/// Charging enemy AI: patrol normally, detect player, wind up, charge, recover.
+fn charging_enemy_behavior(
+    time: Res<Time>,
+    player_query: Query<&Transform, With<Player>>,
+    mut query: Query<(&mut Transform, &mut Patrol, &mut ChargingEnemy, &mut Sprite), (With<Enemy>, Without<Player>)>,
+) {
+    let Ok(player_tf) = player_query.single() else { return };
+    let dt = time.delta_secs();
+
+    for (mut tf, mut patrol, mut charger, mut sprite) in &mut query {
+        charger.state_timer.tick(time.delta());
+
+        match charger.state {
+            ChargeState::Idle => {
+                // Normal patrol
+                tf.translation.x += patrol.direction * ENEMY_SPEED * dt;
+                if tf.translation.x >= patrol.right_bound {
+                    tf.translation.x = patrol.right_bound;
+                    patrol.direction = -1.0;
+                } else if tf.translation.x <= patrol.left_bound {
+                    tf.translation.x = patrol.left_bound;
+                    patrol.direction = 1.0;
+                }
+                sprite.flip_x = patrol.direction < 0.0;
+
+                // Check for player in detect range
+                let dx = player_tf.translation.x - tf.translation.x;
+                let dy = (player_tf.translation.y - tf.translation.y).abs();
+                if dx.abs() < CHARGING_DETECT_RANGE && dy < CHARGING_ENEMY_HEIGHT * 2.0 {
+                    charger.state = ChargeState::WindingUp;
+                    charger.charge_direction = dx.signum();
+                    charger.state_timer = Timer::from_seconds(CHARGING_WIND_TIME, TimerMode::Once);
+                    // Visual cue: tint red during wind-up
+                    sprite.color = Color::srgb(1.0, 0.5, 0.5);
+                }
+            }
+            ChargeState::WindingUp => {
+                if charger.state_timer.is_finished() {
+                    charger.state = ChargeState::Charging;
+                    charger.state_timer = Timer::from_seconds(CHARGING_DURATION, TimerMode::Once);
+                    sprite.color = Color::srgb(1.0, 0.3, 0.3); // brighter red during charge
+                }
+            }
+            ChargeState::Charging => {
+                tf.translation.x += charger.charge_direction * CHARGING_ENEMY_SPEED * dt;
+                sprite.flip_x = charger.charge_direction < 0.0;
+
+                // Stop at platform edges
+                if tf.translation.x >= patrol.right_bound {
+                    tf.translation.x = patrol.right_bound;
+                    charger.state = ChargeState::Recovering;
+                    charger.state_timer = Timer::from_seconds(CHARGING_RECOVERY, TimerMode::Once);
+                } else if tf.translation.x <= patrol.left_bound {
+                    tf.translation.x = patrol.left_bound;
+                    charger.state = ChargeState::Recovering;
+                    charger.state_timer = Timer::from_seconds(CHARGING_RECOVERY, TimerMode::Once);
+                }
+
+                if charger.state_timer.is_finished() {
+                    charger.state = ChargeState::Recovering;
+                    charger.state_timer = Timer::from_seconds(CHARGING_RECOVERY, TimerMode::Once);
+                }
+            }
+            ChargeState::Recovering => {
+                // Pause, then return to idle
+                sprite.color = Color::WHITE; // reset tint
+                if charger.state_timer.is_finished() {
+                    charger.state = ChargeState::Idle;
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Flying Ranged Enemy
+// ---------------------------------------------------------------------------
+
+/// Spawn a flying ranged enemy that hovers and fires downward.
+pub fn spawn_flying_ranged_enemy(commands: &mut Commands, x: f32, y: f32, image: Handle<Image>) {
+    let hover_y = y + 100.0; // hovers higher than regular flying
+
+    commands.spawn((
+        Sprite {
+            image,
+            custom_size: Some(Vec2::splat(FLYING_ENEMY_SIZE)),
+            ..default()
+        },
+        Transform::from_xyz(x, hover_y, FLYING_ENEMY_Z),
+        Enemy,
+        FlyingEnemy {
+            base_y: hover_y,
+            amplitude: FLYING_ENEMY_AMPLITUDE * 0.7,
+            frequency: FLYING_ENEMY_FREQUENCY * 0.8,
+        },
+        FlyingRangedEnemy,
+        ShootTimer {
+            timer: Timer::from_seconds(FLYING_RANGED_FIRE_INTERVAL, TimerMode::Repeating),
+        },
+    ));
+}
+
+/// Flying ranged enemy fires downward projectiles.
+fn flying_ranged_fire(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(&GlobalTransform, &mut ShootTimer), With<FlyingRangedEnemy>>,
+    game_sprites: Res<GameSprites>,
+    audio_handles: Option<Res<AudioHandles>>,
+    player_query: Query<&Transform, With<Player>>,
+) {
+    let Ok(player_tf) = player_query.single() else { return };
+
+    for (gtf, mut timer) in &mut query {
+        timer.timer.tick(time.delta());
+
+        if timer.timer.just_finished() {
+            let pos = gtf.translation();
+            // Fire slightly toward the player but mostly downward
+            let dx = (player_tf.translation.x - pos.x).clamp(-50.0, 50.0);
+            let dir = Vec2::new(dx, -1.0 * FLYING_RANGED_PROJ_SPEED).normalize();
+
+            commands.spawn((
+                Sprite {
+                    image: game_sprites.projectile.clone(),
+                    custom_size: Some(Vec2::splat(PROJECTILE_SIZE)),
+                    ..default()
+                },
+                Transform::from_xyz(pos.x, pos.y, PROJECTILE_Z),
+                Projectile {
+                    velocity: dir * FLYING_RANGED_PROJ_SPEED,
+                    lifetime: Timer::from_seconds(PROJECTILE_LIFETIME, TimerMode::Once),
+                },
+            ));
+
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.shoot {
                     crate::audio::spawn_sfx(&mut commands, handle);
@@ -275,7 +482,6 @@ fn projectile_update(
 // ---------------------------------------------------------------------------
 
 /// Check player–enemy collisions: stomp from above kills enemy, side contact deals damage.
-/// Works for walking, flying, and shooter enemies (all have Enemy marker).
 fn enemy_player_collision(
     mut commands: Commands,
     mut player_query: Query<

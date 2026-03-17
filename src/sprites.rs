@@ -6,7 +6,9 @@ pub struct GameSprites {
     pub enemy_walk: Handle<Image>,
     pub enemy_fly: Handle<Image>,
     pub enemy_shooter: Handle<Image>,
-    pub projectile: Handle<Image>, // reuse star for projectile
+    pub enemy_charging: Handle<Image>,
+    pub enemy_flying_ranged: Handle<Image>,
+    pub projectile: Handle<Image>,
     pub coin: Handle<Image>,
     pub spike: Handle<Image>,
     pub saw: Handle<Image>,
@@ -15,6 +17,9 @@ pub struct GameSprites {
     pub powerup_speed: Handle<Image>,
     pub powerup_jump: Handle<Image>,
     pub powerup_shield: Handle<Image>,
+    pub boulder: Handle<Image>,
+    pub boulder_warning: Handle<Image>,
+    pub timed_trap: Handle<Image>,
 }
 
 pub struct SpritesPlugin;
@@ -30,6 +35,8 @@ fn load_game_sprites(asset_server: Res<AssetServer>, mut sprites: ResMut<GameSpr
     sprites.enemy_walk = asset_server.load("sprites/enemy_walk.png");
     sprites.enemy_fly = asset_server.load("sprites/enemy_fly.png");
     sprites.enemy_shooter = asset_server.load("sprites/enemy_shooter.png");
+    sprites.enemy_charging = asset_server.load("sprites/enemy_charging.png");
+    sprites.enemy_flying_ranged = asset_server.load("sprites/enemy_flying_ranged.png");
     sprites.projectile = asset_server.load("sprites/star.png");
     sprites.coin = asset_server.load("sprites/coin.png");
     sprites.spike = asset_server.load("sprites/spike.png");
@@ -39,4 +46,7 @@ fn load_game_sprites(asset_server: Res<AssetServer>, mut sprites: ResMut<GameSpr
     sprites.powerup_speed = asset_server.load("sprites/powerup_speed.png");
     sprites.powerup_jump = asset_server.load("sprites/powerup_jump.png");
     sprites.powerup_shield = asset_server.load("sprites/powerup_shield.png");
+    sprites.boulder = asset_server.load("sprites/boulder.png");
+    sprites.boulder_warning = asset_server.load("sprites/boulder_warning.png");
+    sprites.timed_trap = asset_server.load("sprites/timed_trap.png");
 }

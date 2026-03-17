@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::audio::{PlaybackMode, Volume};
+use bevy::audio::{AudioSink, PlaybackMode, Volume};
 
 use crate::player::{Grounded, Player, Velocity};
 use crate::state::GameState;
@@ -8,17 +8,32 @@ use crate::state::GameState;
 #[derive(Component)]
 struct BgMusic;
 
-/// Global game settings — volume, etc. Future sprints can add more fields.
+/// Global game settings — volume, etc.
 #[derive(Resource)]
 pub struct GameSettings {
     pub master_volume: f32, // 0.0 to 1.0
+    pub sfx_volume: f32,    // 0.0 to 1.0
+    pub music_volume: f32,  // 0.0 to 1.0
 }
 
 impl Default for GameSettings {
     fn default() -> Self {
         Self {
-            master_volume: 1.0,
+            master_volume: crate::constants::DEFAULT_MASTER_VOLUME,
+            sfx_volume: crate::constants::DEFAULT_SFX_VOLUME,
+            music_volume: crate::constants::DEFAULT_MUSIC_VOLUME,
         }
+    }
+}
+
+impl GameSettings {
+    /// Effective volume for sound effects.
+    pub fn effective_sfx_volume(&self) -> f32 {
+        self.master_volume * self.sfx_volume
+    }
+    /// Effective volume for background music.
+    pub fn effective_music_volume(&self) -> f32 {
+        self.master_volume * self.music_volume
     }
 }
 
@@ -79,7 +94,7 @@ impl Plugin for GameAudioPlugin {
             .add_systems(OnExit(GameState::Playing), stop_music)
             .add_systems(
                 Update,
-                (play_jump_sfx, play_land_sfx)
+                (play_jump_sfx, play_land_sfx, update_music_volume)
                     .run_if(in_state(GameState::Playing)),
             );
     }
@@ -117,7 +132,7 @@ fn start_music(
             AudioPlayer::new(handle.clone()),
             PlaybackSettings {
                 mode: PlaybackMode::Loop,
-                volume: Volume::Linear(settings.master_volume * 0.4), // music quieter than SFX
+                volume: Volume::Linear(settings.effective_music_volume() * 0.4), // music quieter than SFX
                 ..default()
             },
             BgMusic,
@@ -170,4 +185,17 @@ fn play_land_sfx(
     }
 
     prev_grounded.0 = grounded.on_ground;
+}
+
+/// Update the background music volume live when settings change.
+fn update_music_volume(
+    settings: Res<GameSettings>,
+    mut music_query: Query<&mut AudioSink, With<BgMusic>>,
+) {
+    if !settings.is_changed() {
+        return;
+    }
+    for mut sink in &mut music_query {
+        sink.set_volume(Volume::Linear(settings.effective_music_volume() * 0.4));
+    }
 }

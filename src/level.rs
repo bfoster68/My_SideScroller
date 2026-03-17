@@ -1,10 +1,18 @@
 use bevy::prelude::*;
 use rand::Rng;
 
+use crate::checkpoint::{CheckpointData, CheckpointFlag, section_colors};
 use crate::collectibles::{spawn_coin, spawn_coin_at, spawn_coin_on_moving, Coin};
 use crate::constants::*;
-use crate::enemies::{spawn_enemy, spawn_enemy_on_moving, spawn_flying_enemy, spawn_shooter_enemy, Enemy, Projectile};
-use crate::hazards::{spawn_lava, spawn_saw, spawn_saw_on_moving, spawn_spike, spawn_spike_on_moving, Lava, Saw, Spike};
+use crate::enemies::{
+    spawn_charging_enemy, spawn_enemy, spawn_enemy_on_moving, spawn_flying_enemy,
+    spawn_flying_ranged_enemy, spawn_shooter_enemy, Enemy, Projectile,
+};
+use crate::hazards::{
+    spawn_boulder_spawner, spawn_lava, spawn_saw, spawn_saw_on_moving, spawn_spike,
+    spawn_spike_on_moving, spawn_timed_trap, BoulderSpawner, FallingBoulder, Lava, Saw, Spike,
+    TimedTrap,
+};
 use crate::player::{PlayerMovementSet, Score};
 use crate::powerups::{spawn_powerup, PowerupKind};
 use crate::sprites::GameSprites;
@@ -91,6 +99,10 @@ fn reset_level_if_needed(
     lava_query: Query<Entity, With<Lava>>,
     projectile_query: Query<Entity, With<Projectile>>,
     powerup_query: Query<Entity, With<PowerupKind>>,
+    boulder_spawner_query: Query<Entity, With<BoulderSpawner>>,
+    boulder_query: Query<Entity, With<FallingBoulder>>,
+    timed_trap_query: Query<Entity, With<TimedTrap>>,
+    checkpoint_flag_query: Query<Entity, With<CheckpointFlag>>,
 ) {
     // Only reset if there are already platforms (coming from GameOver).
     // On first play from Menu, there will be none, and chunks will generate naturally.
@@ -123,6 +135,18 @@ fn reset_level_if_needed(
     for entity in &powerup_query {
         commands.entity(entity).despawn();
     }
+    for entity in &boulder_spawner_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in &boulder_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in &timed_trap_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in &checkpoint_flag_query {
+        commands.entity(entity).despawn();
+    }
 
     // Reset trackers
     *chunk_tracker = ChunkTracker::default();
@@ -150,6 +174,7 @@ fn generate_chunks(
     difficulty: Res<Difficulty>,
     camera_query: Query<&Transform, With<Camera2d>>,
     game_sprites: Res<GameSprites>,
+    checkpoint_data: Res<CheckpointData>,
 ) {
     let Ok(camera_tf) = camera_query.single() else {
         return;
@@ -160,13 +185,8 @@ fn generate_chunks(
     let mut rng = rand::thread_rng();
     let d = difficulty.value;
 
-    let ground_color = Color::srgb(0.35, 0.28, 0.18);
-    let plat_colors = [
-        Color::srgb(0.28, 0.42, 0.28),
-        Color::srgb(0.30, 0.35, 0.45),
-        Color::srgb(0.45, 0.35, 0.25),
-        Color::srgb(0.35, 0.40, 0.30),
-    ];
+    // Section-based color theming
+    let (ground_color, plat_colors) = section_colors(checkpoint_data.section);
 
     // --- Generate ground segments ---
     let gap_chance = lerp_diff_f64(MIN_GROUND_GAP_CHANCE, MAX_GROUND_GAP_CHANCE, d);
@@ -277,20 +297,34 @@ fn generate_chunks(
             let roll: f64 = rng.gen();
             let saw_chance = spike_chance * 0.5;
             let spike_remaining = spike_chance - saw_chance;
-            // Split enemy budget: 72% walking, 18% flying, 10% shooter
-            let walking_chance = enemy_chance * 0.72;
-            let flying_chance = enemy_chance * 0.18;
-            let shooter_chance = enemy_chance * 0.10;
+            // Split enemy budget: walking, flying, shooter, charging, flying_ranged
+            let charging_pct = if d > 0.3 { 0.15 } else { 0.0 };
+            let flying_ranged_pct = if d > 0.5 { 0.15 } else { 0.0 };
+            let remaining = 1.0 - charging_pct - flying_ranged_pct;
+            let walking_chance = enemy_chance * (0.72 * remaining / (0.72 + 0.18 + 0.10));
+            let flying_chance = enemy_chance * (0.18 * remaining / (0.72 + 0.18 + 0.10));
+            let shooter_chance = enemy_chance * (0.10 * remaining / (0.72 + 0.18 + 0.10));
+            let charging_chance = enemy_chance * charging_pct;
+            let flying_ranged_chance = enemy_chance * flying_ranged_pct;
             if roll < walking_chance && width >= ENEMY_WIDTH * 2.5 {
                 spawn_enemy(&mut commands, new_x, new_y, width, game_sprites.enemy_walk.clone());
             } else if roll < walking_chance + flying_chance {
                 spawn_flying_enemy(&mut commands, new_x, new_y, game_sprites.enemy_fly.clone());
             } else if roll < walking_chance + flying_chance + shooter_chance {
                 spawn_shooter_enemy(&mut commands, new_x, new_y, game_sprites.enemy_shooter.clone());
+            } else if roll < walking_chance + flying_chance + shooter_chance + charging_chance && width >= CHARGING_ENEMY_WIDTH * 2.5 {
+                spawn_charging_enemy(&mut commands, new_x, new_y, width, game_sprites.enemy_charging.clone());
+            } else if roll < walking_chance + flying_chance + shooter_chance + charging_chance + flying_ranged_chance {
+                spawn_flying_ranged_enemy(&mut commands, new_x, new_y, game_sprites.enemy_flying_ranged.clone());
             } else if roll < enemy_chance + saw_chance && width >= SAW_SIZE * 3.0 {
                 spawn_saw(&mut commands, new_x, new_y, width, game_sprites.saw.clone());
             } else if roll < enemy_chance + saw_chance + spike_remaining {
-                spawn_spike(&mut commands, new_x, new_y, game_sprites.spike.clone());
+                // Timed traps replace some spikes at higher difficulty
+                if d > 0.3 && rng.gen_bool(0.3) {
+                    spawn_timed_trap(&mut commands, new_x, new_y, game_sprites.timed_trap.clone());
+                } else {
+                    spawn_spike(&mut commands, new_x, new_y, game_sprites.spike.clone());
+                }
             } else if roll < enemy_chance + spike_chance + coin_chance {
                 // Small chance to spawn a power-up instead of a coin
                 if rng.gen_bool(POWERUP_SPAWN_CHANCE) {
@@ -303,6 +337,11 @@ fn generate_chunks(
                 } else {
                     spawn_coin(&mut commands, new_x, new_y, game_sprites.coin.clone());
                 }
+            }
+
+            // Boulder spawner — small chance on platforms at higher difficulty
+            if d > 0.4 && rng.gen_bool(0.05) {
+                spawn_boulder_spawner(&mut commands, new_x, new_y, game_sprites.boulder.clone(), game_sprites.boulder_warning.clone());
             }
         }
 
@@ -400,6 +439,10 @@ fn despawn_behind_camera(
             With<Lava>,
             With<Projectile>,
             With<PowerupKind>,
+            With<BoulderSpawner>,
+            With<FallingBoulder>,
+            With<TimedTrap>,
+            With<CheckpointFlag>,
         )>,
     >,
 ) {
