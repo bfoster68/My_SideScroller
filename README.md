@@ -5,15 +5,17 @@ A 2D side-scrolling platformer built with [Bevy 0.18](https://bevyengine.org/) (
 ## How to Play
 
 ### Controls
-| Key | Action |
-|-----|--------|
-| A / Left Arrow | Move left |
-| D / Right Arrow | Move right |
-| Space | Jump (press again mid-air for double jump) |
+| Key / Button | Action |
+|--------------|--------|
+| A / Left Arrow / Left Stick | Move left |
+| D / Right Arrow / Left Stick | Move right |
+| Space / A Button (Gamepad) | Jump (press again mid-air for double jump) |
 | Space (tap vs hold) | Short hop vs full jump (variable height) |
-| Escape | Pause / Unpause |
-| Enter / Space | Start game / Restart after game over |
-| R | Regenerate level |
+| Escape / Start Button | Pause / Unpause |
+| Enter / Space / A Button | Select menu item / Restart after game over |
+| Up/Down Arrows / D-Pad | Navigate menus |
+| Left/Right Arrows / D-Pad | Adjust settings |
+| Backtick (`) | Toggle FPS/entity count debug overlay |
 
 ### Objective
 Navigate through procedurally generated platforms, collect coins, stomp enemies, and avoid hazards. Try to rack up the highest score before losing all your health!
@@ -21,8 +23,8 @@ Navigate through procedurally generated platforms, collect coins, stomp enemies,
 ## Features
 
 ### Sprint 1 — Foundation
-- **Modular plugin architecture** — 16 separate modules (player, animation, camera, level, health, hud, state, audio, parallax, enemies, collectibles, hazards, particles, powerups, highscore, transition)
-- **Game state machine** — Menu, Playing, Paused, and Game Over screens with transitions
+- **Modular plugin architecture** — 19 separate modules
+- **Game state machine** — Menu, Playing, Paused, Settings, and Game Over screens with transitions
 - **Double jump** — Two jumps before needing to land
 - **Variable jump height** — Tap Space for a short hop, hold for a full jump
 - **Coyote time** — Brief grace period to jump after walking off a platform edge
@@ -72,32 +74,60 @@ Navigate through procedurally generated platforms, collect coins, stomp enemies,
   - Triple Jump (green) — 3 jumps instead of 2 for 8 seconds
   - Shield (gold) — Absorbs one hit of damage
 
+### Sprint 7 — Art & Audio
+- **Sprite art** — Player, enemy, collectible, and hazard sprites from itch.io asset packs
+- **Sound effects** — .ogg files for jump, land, coin collect, damage, enemy stomp, and power-ups
+- **Background music** — Looping chiptune track during gameplay
+
+### Sprint 8 — Advanced Features
+- **Main menu** — Title screen with New Game, Continue, Settings, and Quit options
+- **Settings screen** — Master/SFX/Music volume sliders with visual bars
+- **Checkpoints** — Flag markers that save progress mid-run
+- **Level sections** — Distinct themed sections with banner transitions (Forest, Cave, Sky, Ruins)
+- **Charging enemies** — Bull-like enemies that rush toward the player on sight
+- **Flying ranged enemies** — Aerial enemies that fire projectiles from above
+- **Falling boulders** — Rocks that drop from above in cave sections
+- **Timed traps** — Spike traps that activate on a cycle
+
+### Sprint 9 — Technical Improvements
+- **Save/Load system** — JSON persistence for settings, high scores, and checkpoint data with automatic migration from legacy format
+- **Continue from checkpoint** — Resume from last checkpoint via the main menu
+- **Screen resolution options** — Cycle between 1280x720, 1920x1080, and 2560x1440 in settings
+- **Fullscreen toggle** — Switch between windowed and borderless fullscreen
+- **Gamepad/controller support** — Full keyboard + gamepad input via unified abstraction layer with analog stick support and D-pad menu navigation
+- **Debug overlay** — Toggle FPS and entity count display with backtick key
+- **Particle cap** — Maximum 200 simultaneous particles to maintain performance
+
 ## Project Structure
 
 ```
 src/
   main.rs          — App entry point, plugin registration
   constants.rs     — All tuning values (physics, sizes, speeds, spawn rates)
-  state.rs         — Game state machine (Menu/Playing/Paused/GameOver)
+  state.rs         — Game state machine (Menu/Playing/Paused/Settings/GameOver)
   player.rs        — Player components, input, physics, AABB collision
+  input.rs         — Unified keyboard + gamepad input abstraction
   animation.rs     — Sprite sheet animation system (idle, run, jump, fall, death)
   camera.rs        — Smooth camera follow with lerp + screen shake
   level.rs         — Procedural platform generation with entity spawning
   health.rs        — Health, damage messages, invincibility, death animation
-  hud.rs           — In-game HUD and overlay screens
+  hud.rs           — In-game HUD, menus, and overlay screens
   parallax.rs      — Multi-layer parallax background
-  enemies.rs       — Walking, flying, and shooter enemies with AI and collision
+  enemies.rs       — Walking, flying, charging, and ranged enemies with AI
   collectibles.rs  — Coin bobbing, spinning, and collection
-  hazards.rs       — Spikes, moving saws, and lava pools
+  hazards.rs       — Spikes, saws, lava, boulders, and timed traps
   powerups.rs      — Speed boost, triple jump, and shield pickups
-  audio.rs         — Sound effect loading and playback
+  audio.rs         — Sound effect loading, playback, and game settings
   particles.rs     — Particle effects (jump dust, landing dust, running dust)
-  highscore.rs     — High score persistence
+  highscore.rs     — High score tracking and new record detection
+  checkpoint.rs    — Checkpoint flags and progress saving
+  save.rs          — JSON save/load system with legacy migration
   transition.rs    — Screen fade transitions
+  debug.rs         — FPS/entity count debug overlay
 
 assets/
-  sprites/         — PNG sprite sheets (idle, run, jump, faint, hurt, slide)
-  *.gif            — Source GIF animations from itch.io
+  sprites/         — PNG sprite sheets (player, enemies, hazards, collectibles)
+  sounds/          — .ogg sound effects and background music
 ```
 
 ## Building & Running
@@ -108,22 +138,6 @@ Requires [Rust](https://rustup.rs/) (edition 2021).
 cargo run
 ```
 
-## What's Left to Do
-
-### Sprint 7 — Art & Audio
-- Sound effects (.ogg files for jump, land, collect, hit, background music)
-- Enemy and collectible sprite art (currently colored shapes)
-- Power-up visual feedback (tinted sprites, outline effects)
-- Lava and saw animated sprites
-
-### Sprint 8 — Advanced Features
-- Checkpoints and level sections
-- End-of-level goals or transitions
-- Main menu with options
-- Settings (volume, controls)
-- More enemy types (charging, flying ranged)
-- More hazard types (falling boulders, timed traps)
-
 ## Tech Stack
 
 - **Engine**: Bevy 0.18
@@ -131,3 +145,5 @@ cargo run
 - **Rendering**: Sprite-based 2D with texture atlas animations
 - **Physics**: Custom AABB collision (separated horizontal/vertical passes)
 - **Audio**: Bevy AudioPlayer with .ogg format
+- **Persistence**: serde/serde_json for save data
+- **Input**: Keyboard + gamepad via unified GameInput abstraction
