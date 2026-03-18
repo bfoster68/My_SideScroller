@@ -63,7 +63,7 @@ fn toggle_debug_overlay(
                 parent.spawn((
                     DebugText,
                     Text::new("Loading..."),
-                    TextFont { font_size: 14.0, ..default() },
+                    TextFont { font_size: 20.0, ..default() },
                     TextColor(Color::srgb(0.0, 1.0, 0.0)),
                 ));
             });
