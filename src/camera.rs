@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::camera::ScalingMode;
 use rand::Rng;
 
 use crate::constants::*;
@@ -28,7 +29,15 @@ impl Plugin for CameraPlugin {
 }
 
 fn spawn_camera(mut commands: Commands) {
-    commands.spawn(Camera2d);
+    commands.spawn((
+        Camera2d,
+        Projection::Orthographic(OrthographicProjection {
+            scaling_mode: ScalingMode::FixedVertical {
+                viewport_height: 720.0,
+            },
+            ..OrthographicProjection::default_2d()
+        }),
+    ));
 }
 
 /// On any damage event, add trauma for screen shake.

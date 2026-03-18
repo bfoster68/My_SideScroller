@@ -39,6 +39,14 @@ pub struct SettingsSelection {
     pub index: usize,
 }
 
+/// Marker resource that triggers deferred window settings on the first Update frame.
+#[derive(Resource)]
+struct ApplyWindowSettings;
+
+/// Deferred window centering — applied next frame after a resolution change.
+#[derive(Resource)]
+struct DeferredRecenter;
+
 pub struct StatePlugin;
 
 impl Plugin for StatePlugin {
@@ -48,16 +56,24 @@ impl Plugin for StatePlugin {
             .init_resource::<MenuSelection>()
             .init_resource::<PauseSelection>()
             .init_resource::<SettingsSelection>()
-            .add_systems(Startup, apply_saved_window_settings)
-            .add_systems(Update, handle_state_input);
+            .insert_resource(ApplyWindowSettings)
+            .add_systems(Update, (apply_saved_window_settings, apply_deferred_recenter, handle_state_input));
     }
 }
 
-/// Apply saved resolution/fullscreen settings to the window on startup.
+/// Apply saved resolution/fullscreen settings on the first Update frame,
+/// after the window has been fully created by the OS.
 fn apply_saved_window_settings(
+    mut commands: Commands,
+    marker: Option<Res<ApplyWindowSettings>>,
     settings: Res<crate::audio::GameSettings>,
     mut window_query: Query<&mut Window>,
 ) {
+    if marker.is_none() {
+        return;
+    }
+    commands.remove_resource::<ApplyWindowSettings>();
+
     let Ok(mut window) = window_query.single_mut() else { return };
     let (w, h) = RESOLUTIONS[settings.resolution_index.min(RESOLUTIONS.len() - 1)];
     window.resolution = WindowResolution::new(w, h);
@@ -65,6 +81,21 @@ fn apply_saved_window_settings(
     if settings.fullscreen {
         window.mode = WindowMode::BorderlessFullscreen(MonitorSelection::Current);
     }
+}
+
+/// Applies window centering one frame after a resolution change,
+/// giving the OS time to process the new window size.
+fn apply_deferred_recenter(
+    mut commands: Commands,
+    marker: Option<Res<DeferredRecenter>>,
+    mut window_query: Query<&mut Window>,
+) {
+    if marker.is_none() {
+        return;
+    }
+    commands.remove_resource::<DeferredRecenter>();
+    let Ok(mut window) = window_query.single_mut() else { return };
+    window.position = WindowPosition::Centered(MonitorSelection::Current);
 }
 
 fn handle_state_input(
@@ -193,11 +224,13 @@ fn handle_state_input(
                         } else {
                             settings.resolution_index -= 1;
                         }
-                        // Apply resolution and re-center window
-                        if let Ok(mut window) = window_query.single_mut() {
-                            let (w, h) = RESOLUTIONS[settings.resolution_index];
-                            window.resolution = WindowResolution::new(w, h);
-                            window.position = WindowPosition::Centered(MonitorSelection::Current);
+                        // Only apply resolution in windowed mode — fullscreen uses native resolution
+                        if !settings.fullscreen {
+                            if let Ok(mut window) = window_query.single_mut() {
+                                let (w, h) = RESOLUTIONS[settings.resolution_index];
+                                window.resolution = WindowResolution::new(w, h);
+                                commands.insert_resource(DeferredRecenter);
+                            }
                         }
                     }
                     4 => {
@@ -208,7 +241,10 @@ fn handle_state_input(
                                 window.mode = WindowMode::BorderlessFullscreen(MonitorSelection::Current);
                             } else {
                                 window.mode = WindowMode::Windowed;
-                                window.position = WindowPosition::Centered(MonitorSelection::Current);
+                                // Restore saved resolution when exiting fullscreen
+                                let (w, h) = RESOLUTIONS[settings.resolution_index];
+                                window.resolution = WindowResolution::new(w, h);
+                                commands.insert_resource(DeferredRecenter);
                             }
                         }
                     }
