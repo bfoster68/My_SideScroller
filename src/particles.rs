@@ -133,7 +133,7 @@ fn run_dust_while_running(
     }
 }
 
-fn spawn_burst(
+pub fn spawn_burst(
     commands: &mut Commands,
     origin: Vec2,
     count: usize,

@@ -1,5 +1,6 @@
 mod animation;
 mod audio;
+mod breakable;
 mod camera;
 mod checkpoint;
 mod collectibles;
@@ -42,6 +43,7 @@ fn main() {
         .add_plugins(camera::CameraPlugin)
         .add_plugins(player::PlayerPlugin)
         .add_plugins(level::LevelPlugin)
+        .add_plugins(breakable::BreakablePlugin)
         .add_plugins(health::HealthPlugin)
         .add_plugins(hud::HudPlugin)
         .add_plugins(animation::AnimationPlugin)

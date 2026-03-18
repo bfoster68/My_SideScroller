@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use rand::Rng;
 
+use crate::breakable::{spawn_breakable_platform, BreakableGroupCounter};
 use crate::checkpoint::{CheckpointData, CheckpointFlag, section_colors};
 use crate::collectibles::{spawn_coin, spawn_coin_at, spawn_coin_on_moving, Coin};
 use crate::constants::*;
@@ -91,6 +92,7 @@ fn reset_level_if_needed(
     mut commands: Commands,
     mut chunk_tracker: ResMut<ChunkTracker>,
     mut difficulty: ResMut<Difficulty>,
+    mut group_counter: ResMut<BreakableGroupCounter>,
     platform_query: Query<Entity, With<Platform>>,
     enemy_query: Query<Entity, With<Enemy>>,
     coin_query: Query<Entity, With<Coin>>,
@@ -151,6 +153,7 @@ fn reset_level_if_needed(
     // Reset trackers
     *chunk_tracker = ChunkTracker::default();
     difficulty.value = 0.0;
+    group_counter.0 = 0;
 }
 
 /// Update difficulty based on current score.
@@ -178,6 +181,7 @@ fn generate_chunks(
     camera_query: Query<&Transform, With<Camera2d>>,
     game_sprites: Res<GameSprites>,
     checkpoint_data: Res<CheckpointData>,
+    mut group_counter: ResMut<BreakableGroupCounter>,
 ) {
     let Ok(camera_tf) = camera_query.single() else {
         return;
@@ -246,8 +250,10 @@ fn generate_chunks(
         let color = plat_colors[color_idx % plat_colors.len()];
         color_idx += 1;
 
-        // Maybe make it a moving platform
+        // Maybe make it a moving or breakable platform
         let is_moving = rng.gen_bool(moving_chance.min(0.5));
+        let breakable_chance = lerp_diff(BREAKABLE_MIN_CHANCE as f32, BREAKABLE_MAX_CHANCE as f32, d) as f64;
+        let is_breakable = !is_moving && rng.gen_bool(breakable_chance.min(0.5));
         if is_moving {
             let plat_entity = spawn_moving_platform(
                 &mut commands,
@@ -284,6 +290,32 @@ fn generate_chunks(
                 commands.entity(plat_entity).with_children(|parent| {
                     spawn_coin_on_moving(parent, img);
                 });
+            }
+        } else if is_breakable {
+            // Breakable platform: row of destructible blocks
+            let num_blocks = rng.gen_range(BREAKABLE_MIN_BLOCKS..=BREAKABLE_MAX_BLOCKS);
+            group_counter.0 += 1;
+            let _actual_width = spawn_breakable_platform(
+                &mut commands,
+                new_x,
+                new_y,
+                num_blocks,
+                group_counter.0,
+            );
+
+            // Place entities on breakable platforms (coins only — no enemies/hazards)
+            let roll: f64 = rng.gen();
+            if roll < coin_chance {
+                if rng.gen_bool(POWERUP_SPAWN_CHANCE) {
+                    spawn_powerup(
+                        &mut commands, new_x, new_y,
+                        game_sprites.powerup_speed.clone(),
+                        game_sprites.powerup_jump.clone(),
+                        game_sprites.powerup_shield.clone(),
+                    );
+                } else {
+                    spawn_coin(&mut commands, new_x, new_y, game_sprites.coin.clone());
+                }
             }
         } else {
             spawn_platform(

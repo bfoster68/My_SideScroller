@@ -195,6 +195,31 @@ pub const RESOLUTION_LABELS: [&str; 3] = ["1280x720", "1920x1080", "2560x1440"];
 // Performance
 pub const MAX_PARTICLES: usize = 200;
 
+// Breakable blocks
+pub const BLOCK_WIDTH: f32 = 32.0;
+pub const BLOCK_HEIGHT: f32 = 20.0; // matches PLATFORM_HEIGHT
+pub const BLOCK_MAX_HEALTH: i32 = 3;
+pub const BLOCK_DAMAGE_PER_STOMP: i32 = 1;
+pub const BLOCK_PARTICLE_COUNT: usize = 6;
+pub const BLOCK_HIT_PARTICLE_COUNT: usize = 3;
+pub const BREAKABLE_MIN_CHANCE: f64 = 0.10;  // 10% at difficulty 0
+pub const BREAKABLE_MAX_CHANCE: f64 = 0.45;  // 45% at max difficulty
+pub const BREAKABLE_MIN_BLOCKS: usize = 3;
+pub const BREAKABLE_MAX_BLOCKS: usize = 7;
+pub const BREAKABLE_SCORE_PER_BLOCK: u32 = 25;
+pub const BLOCK_WEAK_CHANCE: f64 = 0.35; // 35% of blocks spawn pre-damaged
+
+// Debris (block destruction fragments)
+pub const DEBRIS_COUNT: usize = 8;
+pub const DEBRIS_MIN_SIZE: f32 = 4.0;
+pub const DEBRIS_MAX_SIZE: f32 = 12.0;
+pub const DEBRIS_MIN_SPEED: f32 = 80.0;
+pub const DEBRIS_MAX_SPEED: f32 = 220.0;
+pub const DEBRIS_GRAVITY: f32 = -500.0;
+pub const DEBRIS_MAX_SPIN: f32 = 12.0; // radians/sec
+pub const DEBRIS_LIFETIME_MIN: f32 = 0.6;
+pub const DEBRIS_LIFETIME_MAX: f32 = 1.2;
+
 // Gamepad
 pub const GAMEPAD_DEADZONE: f32 = 0.3;
 pub const STICK_NAV_INITIAL_DELAY: f32 = 0.3;
