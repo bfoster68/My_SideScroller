@@ -155,6 +155,9 @@ fn reset_level_if_needed(
 
 /// Update difficulty based on current score.
 fn update_difficulty(score: Res<Score>, mut difficulty: ResMut<Difficulty>) {
+    if !score.is_changed() {
+        return;
+    }
     difficulty.value = (score.value as f32 / DIFFICULTY_SCORE_MAX).min(1.0);
 }
 

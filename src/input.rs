@@ -85,10 +85,13 @@ fn update_game_input(
 
     // --- Gamepad ---
     if let Some(gamepad) = gamepads.iter().next() {
-        // Left stick for movement
-        let stick_x = gamepad.get(GamepadAxis::LeftStickX).unwrap_or(0.0);
-        if stick_x.abs() > GAMEPAD_DEADZONE {
-            input.move_x += stick_x;
+        // Left stick for movement (with deadzone rescaling)
+        let raw_x = gamepad.get(GamepadAxis::LeftStickX).unwrap_or(0.0);
+        if raw_x.abs() > GAMEPAD_DEADZONE {
+            // Rescale so values just above deadzone start near 0 instead of jumping
+            let sign = raw_x.signum();
+            let rescaled = (raw_x.abs() - GAMEPAD_DEADZONE) / (1.0 - GAMEPAD_DEADZONE);
+            input.move_x += sign * rescaled;
         }
 
         // Buttons
@@ -105,6 +108,7 @@ fn update_game_input(
         input.right_pressed |= gamepad.just_pressed(GamepadButton::DPadRight);
 
         // Analog stick menu navigation with repeat timer
+        let stick_x = raw_x; // use raw value for menu nav thresholds
         let stick_y = gamepad.get(GamepadAxis::LeftStickY).unwrap_or(0.0);
         let threshold = 0.6;
 

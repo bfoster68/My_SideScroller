@@ -7,7 +7,7 @@ use crate::state::GameState;
 
 /// A single particle with velocity and remaining lifetime.
 #[derive(Component)]
-struct Particle {
+pub struct Particle {
     velocity: Vec2,
     lifetime: Timer,
 }

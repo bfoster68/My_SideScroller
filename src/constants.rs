@@ -196,6 +196,6 @@ pub const RESOLUTION_LABELS: [&str; 3] = ["1280x720", "1920x1080", "2560x1440"];
 pub const MAX_PARTICLES: usize = 200;
 
 // Gamepad
-pub const GAMEPAD_DEADZONE: f32 = 0.2;
+pub const GAMEPAD_DEADZONE: f32 = 0.3;
 pub const STICK_NAV_INITIAL_DELAY: f32 = 0.3;
 pub const STICK_NAV_REPEAT_DELAY: f32 = 0.15;
