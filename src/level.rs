@@ -290,7 +290,7 @@ fn generate_chunks(
             ) {
                 let offset_x = tracker.rightmost_platform_x + min_gap;
                 // Align chunk entry_y with current platform height
-                let base_y = GROUND_Y - template.entry_y + tracker.last_platform_y;
+                let base_y = tracker.last_platform_y - template.entry_y;
 
                 let chunk_width = crate::ldtk_chunks::spawn_chunk(
                     &mut commands,
