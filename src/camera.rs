@@ -40,8 +40,17 @@ impl Plugin for CameraPlugin {
     }
 }
 
-/// Request a camera snap when entering Playing state.
-fn request_camera_snap(mut commands: Commands) {
+/// Request a camera snap when entering Playing state (skip on unpause).
+fn request_camera_snap(
+    mut commands: Commands,
+    prev_state: Res<crate::state::PreviousGameState>,
+) {
+    if matches!(
+        prev_state.0,
+        Some(crate::state::GameState::Paused) | Some(crate::state::GameState::Settings)
+    ) {
+        return;
+    }
     commands.insert_resource(NeedsCameraSnap);
 }
 

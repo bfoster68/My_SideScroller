@@ -105,7 +105,16 @@ fn reset_checkpoint_data(
     mut commands: Commands,
     flags: Query<Entity, With<CheckpointFlag>>,
     resume: Option<Res<ResumeFromCheckpoint>>,
+    prev_state: Res<crate::state::PreviousGameState>,
 ) {
+    // Coming back from Pause or Settings — nothing to reset.
+    if matches!(
+        prev_state.0,
+        Some(crate::state::GameState::Paused) | Some(crate::state::GameState::Settings)
+    ) {
+        return;
+    }
+
     // If resuming from checkpoint, don't reset — just mark as initialized
     if resume.is_some() {
         data.initialized = true;

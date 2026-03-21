@@ -136,6 +136,7 @@ fn reset_level_if_needed(
     mut group_counter: ResMut<BreakableGroupCounter>,
     checkpoint: Res<CheckpointData>,
     resume: Option<Res<ResumeFromCheckpoint>>,
+    prev_state: Res<crate::state::PreviousGameState>,
     // Single broad query for all level entities — Without<ChildOf> so recursive despawn
     // handles children automatically without double-despawn warnings.
     level_entities: Query<
@@ -159,6 +160,14 @@ fn reset_level_if_needed(
         ),
     >,
 ) {
+    // Coming back from Pause or Settings — level is still intact, do nothing.
+    if matches!(
+        prev_state.0,
+        Some(crate::state::GameState::Paused) | Some(crate::state::GameState::Settings)
+    ) {
+        return;
+    }
+
     let is_resume = resume.is_some();
 
     // Despawn all existing level entities (recursive despawn handles children)

@@ -471,6 +471,7 @@ fn reset_score_on_play(
     mut coins: ResMut<Coins>,
     checkpoint: Res<CheckpointData>,
     resume: Option<Res<ResumeFromCheckpoint>>,
+    prev_state: Res<crate::state::PreviousGameState>,
     mut query: Query<
         (
             &mut Transform,
@@ -481,6 +482,14 @@ fn reset_score_on_play(
         With<Player>,
     >,
 ) {
+    // Coming back from Pause or Settings — nothing to reset.
+    if matches!(
+        prev_state.0,
+        Some(crate::state::GameState::Paused) | Some(crate::state::GameState::Settings)
+    ) {
+        return;
+    }
+
     if resume.is_some() {
         // Resume from checkpoint — restore score and position
         score.value = checkpoint.last_checkpoint_score;

@@ -39,6 +39,10 @@ pub struct SettingsSelection {
     pub index: usize,
 }
 
+/// Tracks the previous game state so OnEnter systems can decide whether to reset.
+#[derive(Resource, Default)]
+pub struct PreviousGameState(pub Option<GameState>);
+
 /// Marker resource that triggers deferred window settings on the first Update frame.
 #[derive(Resource)]
 struct ApplyWindowSettings;
@@ -56,8 +60,9 @@ impl Plugin for StatePlugin {
             .init_resource::<MenuSelection>()
             .init_resource::<PauseSelection>()
             .init_resource::<SettingsSelection>()
+            .init_resource::<PreviousGameState>()
             .insert_resource(ApplyWindowSettings)
-            .add_systems(Update, (apply_saved_window_settings, apply_deferred_recenter, handle_state_input));
+            .add_systems(Update, (apply_saved_window_settings, apply_deferred_recenter, track_previous_state, handle_state_input).chain());
     }
 }
 
@@ -96,6 +101,19 @@ fn apply_deferred_recenter(
     commands.remove_resource::<DeferredRecenter>();
     let Ok(mut window) = window_query.single_mut() else { return };
     window.position = WindowPosition::Centered(MonitorSelection::Current);
+}
+
+/// Record the current state each frame so OnEnter systems know where we came from.
+fn track_previous_state(
+    current: Res<State<GameState>>,
+    next: Res<NextState<GameState>>,
+    mut prev: ResMut<PreviousGameState>,
+) {
+    // Only update when a transition is NOT pending — once NextState is set,
+    // we want to freeze the "previous" value until the transition completes.
+    if matches!(*next, NextState::Unchanged) {
+        prev.0 = Some(*current.get());
+    }
 }
 
 fn handle_state_input(
