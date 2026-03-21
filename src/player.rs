@@ -211,11 +211,14 @@ fn player_input(
 
 fn apply_gravity(
     time: Res<Time>,
-    mut query: Query<(&mut Velocity, &Grounded), With<Player>>,
+    mut query: Query<(&mut Velocity, &Grounded, Option<&DeathTimer>), With<Player>>,
 ) {
-    let Ok((mut velocity, grounded)) = query.single_mut() else {
+    let Ok((mut velocity, grounded, death)) = query.single_mut() else {
         return;
     };
+    if death.is_some() {
+        return;
+    }
 
     if !grounded.on_ground {
         velocity.0.y += GRAVITY * time.delta_secs();
@@ -313,7 +316,7 @@ fn apply_velocity(
 fn respawn_on_fall(
     mut commands: Commands,
     mut query: Query<
-        (Entity, &mut Transform, &mut Velocity, &mut Grounded, &mut JumpCounter),
+        (Entity, &mut Transform, &mut Velocity, &mut Grounded, &mut JumpCounter, Option<&DeathTimer>),
         With<Player>,
     >,
     camera_query: Query<&Transform, (With<Camera2d>, Without<Player>)>,
@@ -326,11 +329,16 @@ fn respawn_on_fall(
     saw_query: Query<&GlobalTransform, (With<Saw>, Without<Player>, Without<Camera2d>, Without<Platform>)>,
     lava_query: Query<&Transform, (With<Lava>, Without<Player>, Without<Camera2d>, Without<Platform>)>,
 ) {
-    let Ok((entity, mut transform, mut velocity, mut grounded, mut jump_counter)) =
+    let Ok((entity, mut transform, mut velocity, mut grounded, mut jump_counter, death)) =
         query.single_mut()
     else {
         return;
     };
+
+    // Don't respawn during death animation
+    if death.is_some() {
+        return;
+    }
 
     // Trigger respawn either when hitting the hard limit OR when
     // the player is falling and there is no platform beneath them.

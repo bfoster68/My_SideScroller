@@ -155,12 +155,15 @@ fn stop_music(mut commands: Commands, query: Query<Entity, With<BgMusic>>) {
 fn play_jump_sfx(
     mut commands: Commands,
     mut prev_airborne: ResMut<AudioPrevAirborne>,
-    query: Query<(&Grounded, &Velocity), With<Player>>,
+    query: Query<(&Grounded, &Velocity, Option<&crate::health::DeathTimer>), With<Player>>,
     handles: Res<AudioHandles>,
 ) {
-    let Ok((grounded, velocity)) = query.single() else {
+    let Ok((grounded, velocity, death)) = query.single() else {
         return;
     };
+    if death.is_some() {
+        return;
+    }
 
     let is_airborne = !grounded.on_ground;
 
@@ -176,12 +179,15 @@ fn play_jump_sfx(
 fn play_land_sfx(
     mut commands: Commands,
     mut prev_grounded: ResMut<AudioPrevGrounded>,
-    query: Query<&Grounded, With<Player>>,
+    query: Query<(&Grounded, Option<&crate::health::DeathTimer>), With<Player>>,
     handles: Res<AudioHandles>,
 ) {
-    let Ok(grounded) = query.single() else {
+    let Ok((grounded, death)) = query.single() else {
         return;
     };
+    if death.is_some() {
+        return;
+    }
 
     if grounded.on_ground && !prev_grounded.0 {
         if let Some(ref handle) = handles.land {
