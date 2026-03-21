@@ -348,7 +348,7 @@ fn boulder_player_collision(
             - (player_tf.translation.y - boulder_tf.translation.y).abs();
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
-            damage_events.write(DamageEvent { amount: BOULDER_DAMAGE });
+            damage_events.write(DamageEvent { amount: BOULDER_DAMAGE, source_pos: Some(Vec2::new(boulder_tf.translation.x, boulder_tf.translation.y)) });
             commands.entity(entity).despawn();
 
             if let Some(ref handles) = audio_handles {
@@ -463,7 +463,7 @@ fn timed_trap_player_collision(
             - (player_tf.translation.y - pos.y).abs();
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
-            damage_events.write(DamageEvent { amount: TIMED_TRAP_DAMAGE });
+            damage_events.write(DamageEvent { amount: TIMED_TRAP_DAMAGE, source_pos: Some(Vec2::new(pos.x, pos.y)) });
 
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.hit {
@@ -503,7 +503,7 @@ fn spike_player_collision(
             - (player_tf.translation.y - spike_pos.y).abs();
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
-            damage_events.write(DamageEvent { amount: SPIKE_DAMAGE });
+            damage_events.write(DamageEvent { amount: SPIKE_DAMAGE, source_pos: Some(Vec2::new(spike_pos.x, spike_pos.y)) });
 
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.hit {
@@ -538,7 +538,7 @@ fn saw_player_collision(
             (player_half_h + saw_half) - (player_tf.translation.y - saw_pos.y).abs();
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
-            damage_events.write(DamageEvent { amount: SAW_DAMAGE });
+            damage_events.write(DamageEvent { amount: SAW_DAMAGE, source_pos: Some(Vec2::new(saw_pos.x, saw_pos.y)) });
 
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.hit {
@@ -573,7 +573,7 @@ fn lava_player_collision(
             - (player_tf.translation.y - lava_tf.translation.y).abs();
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
-            damage_events.write(DamageEvent { amount: LAVA_DAMAGE });
+            damage_events.write(DamageEvent { amount: LAVA_DAMAGE, source_pos: Some(Vec2::new(lava_tf.translation.x, lava_tf.translation.y)) });
             break;
         }
     }

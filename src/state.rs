@@ -149,6 +149,7 @@ fn handle_state_input(
                         next_state.set(GameState::Settings);
                     }
                     3 => {
+                        #[cfg(not(target_arch = "wasm32"))]
                         std::process::exit(0);
                     }
                     _ => {}

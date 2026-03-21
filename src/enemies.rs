@@ -1,9 +1,11 @@
 use bevy::prelude::*;
 
 use crate::audio::AudioHandles;
+use crate::camera::HitFreeze;
 use crate::constants::*;
 use crate::health::{DamageEvent, Invincible};
-use crate::player::{Player, PlayerMovementSet, Score, Velocity};
+use crate::particles::spawn_burst;
+use crate::player::{Grounded, Player, PlayerMovementSet, Score, Velocity};
 use crate::sprites::GameSprites;
 use crate::state::GameState;
 
@@ -64,26 +66,42 @@ pub enum ChargeState {
 #[derive(Component)]
 pub struct FlyingRangedEnemy;
 
+/// Floating score text that rises and fades in world space.
+#[derive(Component)]
+pub struct ScorePopup {
+    pub timer: Timer,
+}
+
+/// Tracks consecutive stomps without landing for combo multiplier.
+#[derive(Resource, Default)]
+pub struct ComboTracker {
+    pub count: u32,
+    pub display_timer: Timer,
+}
+
 pub struct EnemiesPlugin;
 
 impl Plugin for EnemiesPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            (
-                enemy_patrol,
-                flying_enemy_movement,
-                charging_enemy_behavior,
-                flying_ranged_fire,
-                shooter_fire,
-                projectile_update,
-                enemy_player_collision,
-                projectile_player_collision,
-            )
-                .chain()
-                .after(PlayerMovementSet)
-                .run_if(in_state(GameState::Playing)),
-        );
+        app.init_resource::<ComboTracker>()
+            .add_systems(
+                Update,
+                (
+                    enemy_patrol,
+                    flying_enemy_movement,
+                    charging_enemy_behavior,
+                    flying_ranged_fire,
+                    shooter_fire,
+                    projectile_update,
+                    enemy_player_collision,
+                    projectile_player_collision,
+                    update_score_popups,
+                    reset_combo_on_land,
+                )
+                    .chain()
+                    .after(PlayerMovementSet)
+                    .run_if(in_state(GameState::Playing)),
+            );
     }
 }
 
@@ -491,6 +509,7 @@ fn enemy_player_collision(
     enemy_query: Query<(Entity, &GlobalTransform), (With<Enemy>, Without<Projectile>)>,
     mut damage_events: MessageWriter<DamageEvent>,
     mut score: ResMut<Score>,
+    mut combo: ResMut<ComboTracker>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
     let Ok((player_tf, mut player_vel, invincible)) = player_query.single_mut() else {
@@ -520,19 +539,94 @@ fn enemy_player_collision(
         let is_stomp = player_vel.0.y < 0.0 && player_bottom >= stomp_zone;
 
         if is_stomp {
+            let death_pos = Vec2::new(enemy_pos.x, enemy_pos.y);
+
+            // Combo multiplier: 1x, 2x, 4x, 8x, 16x
+            let multiplier = 2u32.pow(combo.count.min(MAX_COMBO_POWER));
+            let kill_score = ENEMY_KILL_SCORE * multiplier;
+            combo.count += 1;
+            combo.display_timer = Timer::from_seconds(COMBO_DISPLAY_DURATION, TimerMode::Once);
+
             commands.entity(enemy_entity).despawn();
             player_vel.0.y = ENEMY_STOMP_BOUNCE;
-            score.value += ENEMY_KILL_SCORE;
+            score.value += kill_score;
+
+            // Death particles (orange/red burst)
+            spawn_burst(
+                &mut commands,
+                death_pos,
+                ENEMY_DEATH_PARTICLE_COUNT,
+                Color::srgb(0.9, 0.4, 0.1),
+                true,
+            );
+
+            // Floating score popup
+            commands.spawn((
+                ScorePopup {
+                    timer: Timer::from_seconds(SCORE_POPUP_DURATION, TimerMode::Once),
+                },
+                Text2d::new(format!("+{}", kill_score)),
+                TextFont { font_size: 20.0, ..default() },
+                TextColor(Color::srgb(1.0, 1.0, 0.3)),
+                Transform::from_xyz(death_pos.x, death_pos.y + 20.0, 5.0),
+            ));
+
+            // Hit freeze for stomp impact
+            commands.insert_resource(HitFreeze {
+                timer: Timer::from_seconds(STOMP_FREEZE_DURATION, TimerMode::Once),
+                time_scale: STOMP_FREEZE_SCALE,
+            });
         } else if invincible.is_none() {
-            damage_events.write(DamageEvent { amount: 1 });
+            let enemy_pos_2d = Vec2::new(enemy_pos.x, enemy_pos.y);
+            damage_events.write(DamageEvent {
+                amount: 1,
+                source_pos: Some(enemy_pos_2d),
+            });
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.hit {
                     crate::audio::spawn_sfx(&mut commands, handle);
                 }
             }
+
+            // Hit freeze for damage impact
+            commands.insert_resource(HitFreeze {
+                timer: Timer::from_seconds(DAMAGE_FREEZE_DURATION, TimerMode::Once),
+                time_scale: DAMAGE_FREEZE_SCALE,
+            });
             break;
         }
     }
+}
+
+/// Update floating score popups — rise, fade, and despawn.
+fn update_score_popups(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut Transform, &mut ScorePopup, &mut TextColor)>,
+) {
+    for (entity, mut tf, mut popup, mut color) in &mut query {
+        popup.timer.tick(time.delta());
+        tf.translation.y += SCORE_POPUP_RISE_SPEED * time.delta_secs();
+        let alpha = popup.timer.fraction_remaining();
+        color.0 = color.0.with_alpha(alpha);
+        if popup.timer.is_finished() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+/// Reset combo when player touches the ground.
+fn reset_combo_on_land(
+    mut combo: ResMut<ComboTracker>,
+    player_query: Query<&Grounded, With<Player>>,
+    time: Res<Time>,
+) {
+    if let Ok(grounded) = player_query.single() {
+        if grounded.on_ground {
+            combo.count = 0;
+        }
+    }
+    combo.display_timer.tick(time.delta());
 }
 
 /// Projectile–player collision.
@@ -565,6 +659,7 @@ fn projectile_player_collision(
             commands.entity(entity).despawn();
             damage_events.write(DamageEvent {
                 amount: PROJECTILE_DAMAGE,
+                source_pos: Some(Vec2::new(proj_tf.translation.x, proj_tf.translation.y)),
             });
 
             if let Some(ref handles) = audio_handles {

@@ -12,6 +12,7 @@ mod health;
 mod highscore;
 mod hud;
 mod input;
+mod ldtk_chunks;
 mod level;
 mod parallax;
 mod particles;
@@ -30,6 +31,8 @@ fn main() {
             primary_window: Some(Window {
                 title: "My Side-Scroller".into(),
                 resolution: WindowResolution::new(1280, 720),
+                canvas: Some("#bevy-canvas".into()),
+                fit_canvas_to_parent: true,
                 ..default()
             }),
             ..default()
@@ -42,6 +45,7 @@ fn main() {
         .add_plugins(state::StatePlugin)
         .add_plugins(camera::CameraPlugin)
         .add_plugins(player::PlayerPlugin)
+        .add_plugins(ldtk_chunks::LdtkChunksPlugin)
         .add_plugins(level::LevelPlugin)
         .add_plugins(breakable::BreakablePlugin)
         .add_plugins(health::HealthPlugin)

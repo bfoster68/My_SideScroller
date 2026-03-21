@@ -15,6 +15,10 @@ use crate::state::GameState;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PlayerMovementSet;
 
+/// System set for the play-start reset — runs first so other OnEnter systems see correct position.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PlayResetSet;
+
 #[derive(Component)]
 pub struct Player;
 
@@ -72,7 +76,7 @@ impl Plugin for PlayerPlugin {
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(OnEnter(GameState::GameOver), reset_player_on_game_over)
-            .add_systems(OnEnter(GameState::Playing), reset_score_on_play);
+            .add_systems(OnEnter(GameState::Playing), reset_score_on_play.in_set(PlayResetSet));
     }
 }
 
@@ -133,6 +137,7 @@ fn player_input(
             Option<&DeathTimer>,
             Option<&SpeedBoost>,
             Option<&TripleJump>,
+            Option<&crate::health::Knockback>,
         ),
         With<Player>,
     >,
@@ -145,6 +150,7 @@ fn player_input(
         death_timer,
         speed_boost,
         triple_jump,
+        knockback,
     )) = query.single_mut()
     else {
         return;
@@ -159,8 +165,11 @@ fn player_input(
     // Determine speed multiplier from active power-ups
     let speed_mult = speed_boost.map_or(1.0, |b| b.multiplier);
 
+    // Reduce input control during knockback
+    let input_mult = if knockback.is_some() { 0.3 } else { 1.0 };
+
     // Horizontal movement (supports analog from gamepad)
-    velocity.0.x = game_input.move_x * PLAYER_SPEED * speed_mult;
+    velocity.0.x = game_input.move_x * PLAYER_SPEED * speed_mult * input_mult;
 
     // Determine max jumps (triple jump power-up)
     let max_jumps = if triple_jump.is_some() {
@@ -366,13 +375,17 @@ fn respawn_on_fall(
             .chain(saw_query.iter().map(|t| t.translation().truncate()))
             .collect();
 
-        // Find the nearest safe platform (no enemies or spikes on it).
-        // Sort candidates by distance to camera so we pick the closest safe one.
-        let mut candidates: Vec<(f32, f32, f32)> = Vec::new(); // (dist, x, top_y)
+        // Find the nearest safe platform, preferring platforms AHEAD of the
+        // player so they don't get stuck in a backward-respawn loop.
+        let player_x = transform.translation.x;
+        let mut candidates: Vec<(f32, f32, f32)> = Vec::new(); // (score, x, top_y)
         for (plat_tf, plat_size) in &platform_query {
-            let dist = (plat_tf.translation.x - camera_x).abs();
+            let px = plat_tf.translation.x;
             let top_y = plat_tf.translation.y + plat_size.0.y / 2.0;
-            candidates.push((dist, plat_tf.translation.x, top_y));
+            let raw_dist = (px - player_x).abs();
+            // Platforms ahead or near the player are strongly preferred
+            let score = if px >= player_x - 100.0 { raw_dist } else { raw_dist + 5000.0 };
+            candidates.push((score, px, top_y));
         }
         candidates.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 

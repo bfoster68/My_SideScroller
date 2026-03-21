@@ -220,6 +220,37 @@ pub const DEBRIS_MAX_SPIN: f32 = 12.0; // radians/sec
 pub const DEBRIS_LIFETIME_MIN: f32 = 0.6;
 pub const DEBRIS_LIFETIME_MAX: f32 = 1.2;
 
+// Enemy death effects
+pub const ENEMY_DEATH_PARTICLE_COUNT: usize = 12;
+pub const SCORE_POPUP_RISE_SPEED: f32 = 80.0;
+pub const SCORE_POPUP_DURATION: f32 = 0.8;
+
+// Knockback
+pub const KNOCKBACK_FORCE: f32 = 200.0;
+pub const KNOCKBACK_LIFT: f32 = 150.0;
+pub const KNOCKBACK_DURATION: f32 = 0.25;
+
+// Hit freeze
+pub const STOMP_FREEZE_DURATION: f32 = 0.05;
+pub const STOMP_FREEZE_SCALE: f32 = 0.05;
+pub const DAMAGE_FREEZE_DURATION: f32 = 0.08;
+pub const DAMAGE_FREEZE_SCALE: f32 = 0.02;
+
+// Combo system
+pub const MAX_COMBO_POWER: u32 = 4;
+pub const COMBO_DISPLAY_DURATION: f32 = 2.0;
+
+// Powerup duration bars
+pub const POWERUP_BAR_WIDTH: f32 = 120.0;
+pub const POWERUP_BAR_HEIGHT: f32 = 12.0;
+#[allow(dead_code)]
+pub const POWERUP_BAR_GAP: f32 = 4.0;
+
+// LDtk chunk integration
+pub const LDTK_CHUNK_CHANCE: f64 = 0.3;
+pub const LDTK_CHUNK_MIN_SPACING: f32 = 800.0;
+pub const LDTK_GRID_SIZE: f32 = 16.0;
+
 // Gamepad
 pub const GAMEPAD_DEADZONE: f32 = 0.3;
 pub const STICK_NAV_INITIAL_DELAY: f32 = 0.3;
