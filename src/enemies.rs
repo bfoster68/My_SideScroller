@@ -503,7 +503,7 @@ fn projectile_update(
 fn enemy_player_collision(
     mut commands: Commands,
     mut player_query: Query<
-        (&Transform, &mut Velocity, Option<&Invincible>),
+        (&Transform, &mut Velocity, Option<&Invincible>, Option<&crate::health::DeathTimer>),
         With<Player>,
     >,
     enemy_query: Query<(Entity, &GlobalTransform), (With<Enemy>, Without<Projectile>)>,
@@ -512,9 +512,12 @@ fn enemy_player_collision(
     mut combo: ResMut<ComboTracker>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
-    let Ok((player_tf, mut player_vel, invincible)) = player_query.single_mut() else {
+    let Ok((player_tf, mut player_vel, invincible, death)) = player_query.single_mut() else {
         return;
     };
+    if death.is_some() {
+        return;
+    }
 
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
@@ -632,16 +635,16 @@ fn reset_combo_on_land(
 /// Projectile–player collision.
 fn projectile_player_collision(
     mut commands: Commands,
-    player_query: Query<(&Transform, Option<&Invincible>), With<Player>>,
+    player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
     projectile_query: Query<(Entity, &Transform), With<Projectile>>,
     mut damage_events: MessageWriter<DamageEvent>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
-    let Ok((player_tf, invincible)) = player_query.single() else {
+    let Ok((player_tf, invincible, death)) = player_query.single() else {
         return;
     };
 
-    if invincible.is_some() {
+    if death.is_some() || invincible.is_some() {
         return;
     }
 

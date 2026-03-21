@@ -2,10 +2,17 @@ use bevy::diagnostic::{DiagnosticsStore, EntityCountDiagnosticsPlugin, FrameTime
 use bevy::prelude::*;
 
 use crate::checkpoint::CheckpointData;
+use crate::constants::MAX_HEALTH;
 use crate::enemies::{ChargingEnemy, Enemy, FlyingEnemy, FlyingRangedEnemy, Projectile, ShooterEnemy};
+use crate::health::{Health, Invincible};
 use crate::level::Difficulty;
 use crate::particles::Particle;
 use crate::player::{Player, Score, Velocity};
+use crate::state::GameState;
+
+/// When active, player is permanently invincible (god mode).
+#[derive(Resource, Default)]
+pub struct GodMode(pub bool);
 
 /// Marker for debug overlay root node.
 #[derive(Component)]
@@ -26,7 +33,8 @@ impl Plugin for DebugPlugin {
         app.add_plugins(FrameTimeDiagnosticsPlugin::default())
             .add_plugins(EntityCountDiagnosticsPlugin::default())
             .init_resource::<DebugVisible>()
-            .add_systems(Update, (toggle_debug_overlay, update_debug_text));
+            .init_resource::<GodMode>()
+            .add_systems(Update, (toggle_debug_overlay, update_debug_text, debug_cheats));
     }
 }
 
@@ -79,6 +87,7 @@ fn update_debug_text(
     visible: Res<DebugVisible>,
     diagnostics: Res<DiagnosticsStore>,
     mut text_query: Query<&mut Text, With<DebugText>>,
+    god_mode: Res<GodMode>,
     // Player info
     player_query: Query<(&Transform, &Velocity), With<Player>>,
     // Game state
@@ -132,15 +141,19 @@ fn update_debug_text(
     let particles = particle_query.iter().count();
     let projectiles = projectile_query.iter().count();
 
+    let god = if god_mode.0 { " [GOD]" } else { "" };
+
     let debug_text = format!(
-        "FPS: {:.0}  |  Entities: {}\n\
+        "FPS: {:.0}  |  Entities: {}{}\n\
          Pos: {}  Vel: {}\n\
          Score: {}  |  Difficulty: {:.0}%\n\
          Section: {}  |  Checkpoint: {}\n\
          Enemies: {} (W:{} F:{} S:{} C:{} R:{})\n\
-         Particles: {}/{}  |  Projectiles: {}",
+         Particles: {}/{}  |  Projectiles: {}\n\
+         0:God  9:Heal",
         fps,
         entity_count,
+        god,
         player_pos,
         player_vel,
         score.value,
@@ -158,3 +171,50 @@ fn update_debug_text(
 }
 
 use crate::constants::MAX_PARTICLES;
+
+/// Debug cheats: 0 = toggle god mode, 9 = refill health.
+fn debug_cheats(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut god_mode: ResMut<GodMode>,
+    mut player_query: Query<(Entity, &mut Health), With<Player>>,
+    state: Res<State<GameState>>,
+) {
+    if *state.get() != GameState::Playing {
+        return;
+    }
+
+    // 0: Toggle god mode (permanent invincibility)
+    if keyboard.just_pressed(KeyCode::Digit0) {
+        god_mode.0 = !god_mode.0;
+        if let Ok((entity, _)) = player_query.single_mut() {
+            if god_mode.0 {
+                // Insert a very long invincibility
+                commands.entity(entity).insert(Invincible {
+                    timer: Timer::from_seconds(999999.0, TimerMode::Once),
+                });
+                info!("GOD MODE: ON");
+            } else {
+                commands.entity(entity).remove::<Invincible>();
+                info!("GOD MODE: OFF");
+            }
+        }
+    }
+
+    // 9: Refill health to max
+    if keyboard.just_pressed(KeyCode::Digit9) {
+        if let Ok((_, mut health)) = player_query.single_mut() {
+            health.current = MAX_HEALTH;
+            info!("HEALTH REFILLED");
+        }
+    }
+
+    // Re-apply god mode invincibility if it expired or was removed
+    if god_mode.0 {
+        if let Ok((entity, _)) = player_query.single_mut() {
+            commands.entity(entity).insert(Invincible {
+                timer: Timer::from_seconds(999999.0, TimerMode::Once),
+            });
+        }
+    }
+}

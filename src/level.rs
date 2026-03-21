@@ -460,10 +460,7 @@ fn generate_chunks(
                         game_sprites.powerup_shield.clone(),
                     );
                 } else {
-                    let img = game_sprites.coin.clone();
-                    commands.entity(plat_entity).with_children(|parent| {
-                        spawn_coin_on_moving(parent, img);
-                    });
+                    spawn_coin(&mut commands, new_x, new_y, game_sprites.coin.clone());
                 }
             }
 

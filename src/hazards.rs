@@ -329,13 +329,13 @@ fn boulder_movement(
 /// Boulder–player collision.
 fn boulder_player_collision(
     mut commands: Commands,
-    player_query: Query<(&Transform, Option<&Invincible>), With<Player>>,
+    player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
     boulder_query: Query<(Entity, &Transform), With<FallingBoulder>>,
     mut damage_events: MessageWriter<DamageEvent>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
-    let Ok((player_tf, invincible)) = player_query.single() else { return };
-    if invincible.is_some() { return; }
+    let Ok((player_tf, invincible, death)) = player_query.single() else { return };
+    if death.is_some() || invincible.is_some() { return; }
 
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
@@ -440,13 +440,13 @@ fn timed_trap_system(
 /// Timed trap–player collision (only when active).
 fn timed_trap_player_collision(
     mut commands: Commands,
-    player_query: Query<(&Transform, Option<&Invincible>), With<Player>>,
+    player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
     trap_query: Query<(&GlobalTransform, &TimedTrap)>,
     mut damage_events: MessageWriter<DamageEvent>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
-    let Ok((player_tf, invincible)) = player_query.single() else { return };
-    if invincible.is_some() { return; }
+    let Ok((player_tf, invincible, death)) = player_query.single() else { return };
+    if death.is_some() || invincible.is_some() { return; }
 
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
@@ -482,13 +482,13 @@ fn timed_trap_player_collision(
 
 fn spike_player_collision(
     mut commands: Commands,
-    player_query: Query<(&Transform, Option<&Invincible>), With<Player>>,
+    player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
     spike_query: Query<&GlobalTransform, With<Spike>>,
     mut damage_events: MessageWriter<DamageEvent>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
-    let Ok((player_tf, invincible)) = player_query.single() else { return };
-    if invincible.is_some() { return; }
+    let Ok((player_tf, invincible, death)) = player_query.single() else { return };
+    if death.is_some() || invincible.is_some() { return; }
 
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
@@ -518,13 +518,13 @@ fn spike_player_collision(
 
 fn saw_player_collision(
     mut commands: Commands,
-    player_query: Query<(&Transform, Option<&Invincible>), With<Player>>,
+    player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
     saw_query: Query<&GlobalTransform, With<Saw>>,
     mut damage_events: MessageWriter<DamageEvent>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
-    let Ok((player_tf, invincible)) = player_query.single() else { return };
-    if invincible.is_some() { return; }
+    let Ok((player_tf, invincible, death)) = player_query.single() else { return };
+    if death.is_some() || invincible.is_some() { return; }
 
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
@@ -552,12 +552,12 @@ fn saw_player_collision(
 }
 
 fn lava_player_collision(
-    player_query: Query<(&Transform, Option<&Invincible>), With<Player>>,
+    player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
     lava_query: Query<(&Transform, &Sprite), (With<Lava>, Without<Player>)>,
     mut damage_events: MessageWriter<DamageEvent>,
 ) {
-    let Ok((player_tf, invincible)) = player_query.single() else { return };
-    if invincible.is_some() { return; }
+    let Ok((player_tf, invincible, death)) = player_query.single() else { return };
+    if death.is_some() || invincible.is_some() { return; }
 
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
