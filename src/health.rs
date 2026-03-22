@@ -76,6 +76,7 @@ fn apply_damage(
         (Entity, &Transform, &mut Health, &mut Velocity, Option<&Invincible>, Option<&DeathTimer>, Option<&mut Shield>),
         With<Player>,
     >,
+    god_mode: Res<crate::debug::GodMode>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
     let Ok((entity, player_tf, mut health, mut velocity, invincible, death_timer, mut shield)) = query.single_mut()
@@ -90,8 +91,8 @@ fn apply_damage(
     }
 
     for event in damage_events.read() {
-        // Can't take damage while invincible
-        if invincible.is_some() {
+        // Can't take damage while invincible or in god mode
+        if invincible.is_some() || god_mode.0 {
             continue;
         }
 

@@ -1,5 +1,18 @@
 # Polish Plan — Round 2
 
+## Completed
+
+- [x] **Breakable block run wear** — blocks degrade visually and break when player runs across them (BLOCK_WEAR_RATE = 0.4/s)
+- [x] **Game over clears checkpoint** — no more "Continue" after dying, new games always start at section 1
+- [x] **Combo system extended** — breakable block destruction contributes to combo chain
+- [x] **Shooter enemy scaling** — fire rate, projectile speed scale with difficulty; range-gated at 600px
+- [x] **Charging enemy tuned** — detect range 300→220px, wind-up 0.3→0.45s
+- [x] **Coin value scaling** — 10pts at d=0 → 50pts at d=1
+- [x] **Flying ranged projectile fix** — direction vector no longer double-scaled
+- [x] **Lava hitbox fix** — extends downward only, not above visual
+- [x] **Particle burst cap** — MAX_PARTICLES/4 limit on burst spawning
+- [x] **Audio load warnings** — logs missing audio files at startup
+
 ## Phase 1: Bug Fixes
 
 ### 1. Fix checkpoint section banner operator precedence

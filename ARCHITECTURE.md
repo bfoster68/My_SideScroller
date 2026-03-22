@@ -4,7 +4,7 @@
 
 A 2D side-scrolling platformer built with **Bevy 0.18** (Rust). The game features procedural infinite level generation with optional hand-designed LDtk chunks, multiple enemy types, collectibles, power-ups, hazards, a checkpoint/section system, and a GPU compute shader background.
 
-**Total codebase**: ~7,500 lines across 25 modules.
+**Total codebase**: ~7,570 lines across 25 modules.
 
 ---
 
@@ -176,7 +176,7 @@ A 2D side-scrolling platformer built with **Bevy 0.18** (Rust). The game feature
 | `PlatformSize(Vec2)` | Collision dimensions |
 | `MovingPlatform { base_y, speed, range }` | Oscillation data |
 | `PlatformVelocity(Vec2)` | Per-frame delta for carrying player |
-| `BreakableBlock { health, max_health, group_id }` | Destructible |
+| `BreakableBlock { health, max_health, group_id, wear }` | Destructible (wear degrades while running) |
 
 ### Enemies
 | Component | Purpose |
@@ -238,8 +238,9 @@ Where `DIFFICULTY_SCORE_MAX = 5000`.
 - Enemy spawn chance (more enemies)
 - Spike/saw spawn chance (more hazards)
 - Moving platform frequency (fewer safe platforms)
-- Shooter fire rate (faster) and projectile speed (faster)
-- Coin value (10-50 points)
+- Shooter fire rate (2.5s→1.2s), projectile speed (160→280px/s), range-gated (600px)
+- Charging enemy detect range (220px), wind-up time (0.45s)
+- Coin value (10pts at d=0 → 50pts at d=1)
 - LDtk chunk selection (filtered by difficulty range)
 
 ---
@@ -274,6 +275,8 @@ Hand-designed level chunks parsed from `assets/levels/chunks.ldtk`:
 - WASM: localStorage via web-sys
 - Saves: `GameSettings` (volume, resolution, fullscreen) + `HighScore`
 - Auto-saves settings on change, high score on game over
+- Checkpoint data cleared on game over (no "Continue" after death)
+- "Continue" only available from menu if checkpoint was saved mid-run
 
 ---
 
@@ -292,7 +295,7 @@ Hand-designed level chunks parsed from `assets/levels/chunks.ldtk`:
 ```
 src/
   main.rs          (67 lines)   - App setup, plugin registration
-  constants.rs     (255 lines)  - All tuning values
+  constants.rs     (256 lines)  - All tuning values
   state.rs         (295 lines)  - GameState, menus, pause, transitions
   input.rs         (185 lines)  - Keyboard/gamepad -> GameInput
   player.rs        (535 lines)  - Movement, physics, collision, respawn
@@ -308,12 +311,12 @@ src/
   particles.rs     (206 lines)  - Dust, debris, bursts
   collectibles.rs  (134 lines)  - Coins
   powerups.rs      (239 lines)  - Speed, jump, shield
-  breakable.rs     (282 lines)  - Destructible blocks
+  breakable.rs     (381 lines)  - Destructible blocks + run wear
   checkpoint.rs    (265 lines)  - Sections, banners, colors
   health.rs        (217 lines)  - Damage, death, invincibility
   save.rs          (145 lines)  - Persistence
   sprites.rs       (52 lines)   - Asset loading
-  highscore.rs     (52 lines)   - High score display
+  highscore.rs     (56 lines)   - High score + checkpoint clear on game over
   transition.rs    (97 lines)   - Screen fades
   debug.rs         (220 lines)  - Overlay, god mode, cheats
 

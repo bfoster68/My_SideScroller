@@ -3,11 +3,12 @@ use bevy::prelude::*;
 
 use crate::checkpoint::CheckpointData;
 use crate::constants::MAX_HEALTH;
-use crate::enemies::{ChargingEnemy, Enemy, FlyingEnemy, FlyingRangedEnemy, Projectile, ShooterEnemy};
+use crate::enemies::{ComboTracker, Enemy, Projectile};
 use crate::health::{Health, Invincible};
-use crate::level::Difficulty;
+use crate::level::{ChunkTracker, Difficulty, Platform};
 use crate::particles::Particle;
-use crate::player::{Player, Score, Velocity};
+use crate::player::{Grounded, Player, Score, Velocity};
+use crate::powerups::{SpeedBoost, TripleJump, Shield};
 use crate::state::GameState;
 
 /// When active, player is permanently invincible (god mode).
@@ -89,17 +90,19 @@ fn update_debug_text(
     mut text_query: Query<&mut Text, With<DebugText>>,
     god_mode: Res<GodMode>,
     // Player info
-    player_query: Query<(&Transform, &Velocity), With<Player>>,
+    player_query: Query<
+        (&Transform, &Velocity, &Grounded, &Health, Option<&Invincible>, Option<&SpeedBoost>, Option<&TripleJump>, Option<&Shield>),
+        With<Player>,
+    >,
     // Game state
     difficulty: Res<Difficulty>,
     score: Res<Score>,
     checkpoint: Res<CheckpointData>,
-    // Entity counts
+    combo: Res<ComboTracker>,
+    chunk_tracker: Res<ChunkTracker>,
+    // Entity counts (combined into fewer queries)
+    platform_query: Query<(), With<Platform>>,
     enemy_query: Query<(), With<Enemy>>,
-    flying_query: Query<(), With<FlyingEnemy>>,
-    shooter_query: Query<(), With<ShooterEnemy>>,
-    charging_query: Query<(), With<ChargingEnemy>>,
-    flying_ranged_query: Query<(), With<FlyingRangedEnemy>>,
     particle_query: Query<(), With<Particle>>,
     projectile_query: Query<(), With<Projectile>>,
 ) {
@@ -118,59 +121,73 @@ fn update_debug_text(
         .unwrap_or(0.0) as u32;
 
     // Player state
-    let (player_pos, player_vel) = if let Ok((tf, vel)) = player_query.single() {
-        (
-            format!("({:.0}, {:.0})", tf.translation.x, tf.translation.y),
-            format!("({:.0}, {:.0})", vel.0.x, vel.0.y),
-        )
-    } else {
-        ("--".to_string(), "--".to_string())
-    };
+    let (player_pos, player_vel, player_state, health_str, powerups_str) =
+        if let Ok((tf, vel, grounded, health, invincible, speed, triple, shield)) = player_query.single() {
+            let ground_str = if grounded.on_ground { "GND" } else { "AIR" };
+            let inv_str = if invincible.is_some() { " INV" } else { "" };
+            let mut pups = Vec::new();
+            if speed.is_some() { pups.push("SPD"); }
+            if triple.is_some() { pups.push("3JMP"); }
+            if shield.is_some() { pups.push("SHD"); }
+            let pup_str = if pups.is_empty() { "none".to_string() } else { pups.join(" ") };
+            (
+                format!("({:.0}, {:.0})", tf.translation.x, tf.translation.y),
+                format!("({:.0}, {:.0})", vel.0.x, vel.0.y),
+                format!("{}{}", ground_str, inv_str),
+                format!("{}/{}", health.current, health.max),
+                pup_str,
+            )
+        } else {
+            ("--".into(), "--".into(), "--".into(), "--".into(), "--".into())
+        };
 
-    // Enemy counts
+    // Entity counts
     let total_enemies = enemy_query.iter().count();
-    let walkers = total_enemies
-        - flying_query.iter().count()
-        - shooter_query.iter().count()
-        - charging_query.iter().count()
-        - flying_ranged_query.iter().count();
-    let flyers = flying_query.iter().count();
-    let shooters = shooter_query.iter().count();
-    let chargers = charging_query.iter().count();
-    let ranged = flying_ranged_query.iter().count();
     let particles = particle_query.iter().count();
     let projectiles = projectile_query.iter().count();
+    let platforms = platform_query.iter().count();
 
     let god = if god_mode.0 { " [GOD]" } else { "" };
+    let combo_str = if combo.count > 0 {
+        format!("  Combo: {}x", 2u32.pow(combo.count.min(4)))
+    } else {
+        String::new()
+    };
 
     let debug_text = format!(
         "FPS: {:.0}  |  Entities: {}{}\n\
          Pos: {}  Vel: {}\n\
-         Score: {}  |  Difficulty: {:.0}%\n\
+         State: {}  |  HP: {}  |  Powerups: {}\n\
+         Score: {}  |  Diff: {:.0}%{}\n\
          Section: {}  |  Checkpoint: {}\n\
-         Enemies: {} (W:{} F:{} S:{} C:{} R:{})\n\
-         Particles: {}/{}  |  Projectiles: {}\n\
+         Enemies: {}  |  Platforms: {}  |  Proj: {}\n\
+         Particles: {}  |  Gen: {:.0}  |  Gnd: {:.0}\n\
          0:God  9:Heal",
         fps,
         entity_count,
         god,
         player_pos,
         player_vel,
+        player_state,
+        health_str,
+        powerups_str,
         score.value,
         difficulty.value * 100.0,
+        combo_str,
         checkpoint.section,
         checkpoint.last_checkpoint_score,
-        total_enemies, walkers, flyers, shooters, chargers, ranged,
-        particles, MAX_PARTICLES,
+        total_enemies,
+        platforms,
         projectiles,
+        particles,
+        chunk_tracker.rightmost_platform_x,
+        chunk_tracker.rightmost_ground_x,
     );
 
     for mut text in &mut text_query {
         **text = debug_text.clone();
     }
 }
-
-use crate::constants::MAX_PARTICLES;
 
 /// Debug cheats: 0 = toggle god mode, 9 = refill health.
 fn debug_cheats(
