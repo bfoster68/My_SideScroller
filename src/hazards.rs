@@ -184,8 +184,21 @@ fn saw_animate(time: Res<Time>, mut query: Query<&mut Transform, With<Saw>>) {
 // Lava
 // ---------------------------------------------------------------------------
 
+/// Collision detection box for lava (taller than the visual to prevent
+/// fast-falling players from skipping through). Extends downward only.
+#[derive(Component)]
+pub struct LavaHitbox {
+    pub size: Vec2,
+    /// How far below the sprite center the hitbox center sits.
+    pub y_offset: f32,
+}
+
 pub fn spawn_lava(commands: &mut Commands, x: f32, width: f32, image: Handle<Image>) {
     let y = GROUND_Y - (GROUND_HEIGHT / 2.0) + (LAVA_HEIGHT / 2.0) - 5.0;
+
+    // Extra height extends only downward so players aren't killed above the lava
+    let extra_below = 80.0;
+    let hitbox_height = LAVA_HEIGHT + extra_below;
 
     commands.spawn((
         Sprite {
@@ -195,6 +208,10 @@ pub fn spawn_lava(commands: &mut Commands, x: f32, width: f32, image: Handle<Ima
         },
         Transform::from_xyz(x, y, LAVA_Z),
         Lava,
+        LavaHitbox {
+            size: Vec2::new(width, hitbox_height),
+            y_offset: extra_below / 2.0, // shift center downward
+        },
     ));
 }
 
@@ -329,13 +346,13 @@ fn boulder_movement(
 /// Boulder–player collision.
 fn boulder_player_collision(
     mut commands: Commands,
-    player_query: Query<(&Transform, Option<&Invincible>), With<Player>>,
+    player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
     boulder_query: Query<(Entity, &Transform), With<FallingBoulder>>,
     mut damage_events: MessageWriter<DamageEvent>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
-    let Ok((player_tf, invincible)) = player_query.single() else { return };
-    if invincible.is_some() { return; }
+    let Ok((player_tf, invincible, death)) = player_query.single() else { return };
+    if death.is_some() || invincible.is_some() { return; }
 
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
@@ -348,7 +365,7 @@ fn boulder_player_collision(
             - (player_tf.translation.y - boulder_tf.translation.y).abs();
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
-            damage_events.write(DamageEvent { amount: BOULDER_DAMAGE });
+            damage_events.write(DamageEvent { amount: BOULDER_DAMAGE, source_pos: Some(Vec2::new(boulder_tf.translation.x, boulder_tf.translation.y)) });
             commands.entity(entity).despawn();
 
             if let Some(ref handles) = audio_handles {
@@ -440,13 +457,13 @@ fn timed_trap_system(
 /// Timed trap–player collision (only when active).
 fn timed_trap_player_collision(
     mut commands: Commands,
-    player_query: Query<(&Transform, Option<&Invincible>), With<Player>>,
+    player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
     trap_query: Query<(&GlobalTransform, &TimedTrap)>,
     mut damage_events: MessageWriter<DamageEvent>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
-    let Ok((player_tf, invincible)) = player_query.single() else { return };
-    if invincible.is_some() { return; }
+    let Ok((player_tf, invincible, death)) = player_query.single() else { return };
+    if death.is_some() || invincible.is_some() { return; }
 
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
@@ -463,7 +480,7 @@ fn timed_trap_player_collision(
             - (player_tf.translation.y - pos.y).abs();
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
-            damage_events.write(DamageEvent { amount: TIMED_TRAP_DAMAGE });
+            damage_events.write(DamageEvent { amount: TIMED_TRAP_DAMAGE, source_pos: Some(Vec2::new(pos.x, pos.y)) });
 
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.hit {
@@ -482,13 +499,13 @@ fn timed_trap_player_collision(
 
 fn spike_player_collision(
     mut commands: Commands,
-    player_query: Query<(&Transform, Option<&Invincible>), With<Player>>,
+    player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
     spike_query: Query<&GlobalTransform, With<Spike>>,
     mut damage_events: MessageWriter<DamageEvent>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
-    let Ok((player_tf, invincible)) = player_query.single() else { return };
-    if invincible.is_some() { return; }
+    let Ok((player_tf, invincible, death)) = player_query.single() else { return };
+    if death.is_some() || invincible.is_some() { return; }
 
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
@@ -503,7 +520,7 @@ fn spike_player_collision(
             - (player_tf.translation.y - spike_pos.y).abs();
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
-            damage_events.write(DamageEvent { amount: SPIKE_DAMAGE });
+            damage_events.write(DamageEvent { amount: SPIKE_DAMAGE, source_pos: Some(Vec2::new(spike_pos.x, spike_pos.y)) });
 
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.hit {
@@ -518,13 +535,13 @@ fn spike_player_collision(
 
 fn saw_player_collision(
     mut commands: Commands,
-    player_query: Query<(&Transform, Option<&Invincible>), With<Player>>,
+    player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
     saw_query: Query<&GlobalTransform, With<Saw>>,
     mut damage_events: MessageWriter<DamageEvent>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
-    let Ok((player_tf, invincible)) = player_query.single() else { return };
-    if invincible.is_some() { return; }
+    let Ok((player_tf, invincible, death)) = player_query.single() else { return };
+    if death.is_some() || invincible.is_some() { return; }
 
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
@@ -538,7 +555,7 @@ fn saw_player_collision(
             (player_half_h + saw_half) - (player_tf.translation.y - saw_pos.y).abs();
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
-            damage_events.write(DamageEvent { amount: SAW_DAMAGE });
+            damage_events.write(DamageEvent { amount: SAW_DAMAGE, source_pos: Some(Vec2::new(saw_pos.x, saw_pos.y)) });
 
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.hit {
@@ -552,28 +569,29 @@ fn saw_player_collision(
 }
 
 fn lava_player_collision(
-    player_query: Query<(&Transform, Option<&Invincible>), With<Player>>,
-    lava_query: Query<(&Transform, &Sprite), (With<Lava>, Without<Player>)>,
+    player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
+    lava_query: Query<(&Transform, &LavaHitbox), (With<Lava>, Without<Player>)>,
     mut damage_events: MessageWriter<DamageEvent>,
 ) {
-    let Ok((player_tf, invincible)) = player_query.single() else { return };
-    if invincible.is_some() { return; }
+    let Ok((player_tf, invincible, death)) = player_query.single() else { return };
+    if death.is_some() || invincible.is_some() { return; }
 
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
 
-    for (lava_tf, lava_sprite) in &lava_query {
-        let lava_size = lava_sprite.custom_size.unwrap_or(Vec2::new(GROUND_SEGMENT_WIDTH, LAVA_HEIGHT));
-        let lava_half_w = lava_size.x / 2.0;
-        let lava_half_h = lava_size.y / 2.0;
+    for (lava_tf, hitbox) in &lava_query {
+        let lava_half_w = hitbox.size.x / 2.0;
+        let lava_half_h = hitbox.size.y / 2.0;
+        // Hitbox center is shifted downward from sprite center
+        let hitbox_center_y = lava_tf.translation.y - hitbox.y_offset;
 
         let overlap_x = (player_half_w + lava_half_w)
             - (player_tf.translation.x - lava_tf.translation.x).abs();
         let overlap_y = (player_half_h + lava_half_h)
-            - (player_tf.translation.y - lava_tf.translation.y).abs();
+            - (player_tf.translation.y - hitbox_center_y).abs();
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
-            damage_events.write(DamageEvent { amount: LAVA_DAMAGE });
+            damage_events.write(DamageEvent { amount: LAVA_DAMAGE, source_pos: Some(Vec2::new(lava_tf.translation.x, lava_tf.translation.y)) });
             break;
         }
     }

@@ -7,7 +7,7 @@ use crate::state::GameState;
 
 /// A single particle with velocity and remaining lifetime.
 #[derive(Component)]
-struct Particle {
+pub struct Particle {
     velocity: Vec2,
     lifetime: Timer,
 }
@@ -133,17 +133,16 @@ fn run_dust_while_running(
     }
 }
 
-fn spawn_burst(
+pub fn spawn_burst(
     commands: &mut Commands,
     origin: Vec2,
     count: usize,
     color: Color,
     upward_bias: bool,
 ) {
-    // Note: particle cap is checked by callers or naturally limited by short lifetimes.
-    // The MAX_PARTICLES constant exists for reference but burst spawns are small enough
-    // that they won't exceed it under normal gameplay.
     let mut rng = rand::thread_rng();
+    // Cap count to avoid runaway spawning in intense action
+    let count = count.min(MAX_PARTICLES / 4);
 
     for _ in 0..count {
         let angle = if upward_bias {

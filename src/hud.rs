@@ -3,9 +3,11 @@ use bevy::prelude::*;
 use crate::audio::GameSettings;
 use crate::checkpoint::CheckpointData;
 use crate::constants::*;
+use crate::enemies::ComboTracker;
 use crate::health::Health;
 use crate::highscore::{HighScore, HighScoreSet, NewHighScoreFlag};
 use crate::player::{Coins, Player, Score};
+use crate::powerups::{Shield, SpeedBoost, TripleJump};
 use crate::state::{GameState, MenuSelection, PauseSelection, SettingsSelection};
 
 /// Marker for the HUD root node so we can despawn it cleanly.
@@ -56,6 +58,23 @@ struct SettingsItem(usize);
 #[derive(Component)]
 pub struct SectionBannerUi;
 
+/// Marker for combo display text.
+#[derive(Component)]
+struct ComboText;
+
+/// Marker for powerup bar container.
+#[derive(Component)]
+struct PowerupBarRoot;
+
+/// Marker for individual powerup bar fill nodes.
+#[derive(Component)]
+struct PowerupBarFill(usize); // 0=speed, 1=jump, 2=shield
+
+/// Marker for powerup bar label text.
+#[derive(Component)]
+#[allow(dead_code)]
+struct PowerupBarLabel(usize);
+
 pub struct HudPlugin;
 
 impl Plugin for HudPlugin {
@@ -68,7 +87,7 @@ impl Plugin for HudPlugin {
             // In-game HUD
             .add_systems(OnEnter(GameState::Playing), spawn_hud)
             .add_systems(OnExit(GameState::Playing), despawn_all::<HudRoot>)
-            .add_systems(Update, update_hud.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, (update_hud, update_combo_text, update_powerup_bars).run_if(in_state(GameState::Playing)))
             // Pause
             .add_systems(OnEnter(GameState::Paused), spawn_pause_overlay)
             .add_systems(OnExit(GameState::Paused), despawn_all::<PauseOverlay>)
@@ -103,30 +122,101 @@ fn spawn_hud(mut commands: Commands) {
                 width: Val::Percent(100.0),
                 height: Val::Auto,
                 padding: UiRect::all(Val::Px(16.0)),
-                justify_content: JustifyContent::SpaceBetween,
+                flex_direction: FlexDirection::Column,
                 position_type: PositionType::Absolute,
                 ..default()
             },
         ))
         .with_children(|parent| {
+            // Top row: Health, Score, Coins
+            parent.spawn(Node {
+                width: Val::Percent(100.0),
+                justify_content: JustifyContent::SpaceBetween,
+                ..default()
+            }).with_children(|row| {
+                row.spawn((
+                    HealthText,
+                    Text::new("Health: 3"),
+                    TextFont { font_size: 24.0, ..default() },
+                    TextColor(Color::srgb(1.0, 0.3, 0.3)),
+                ));
+                row.spawn((
+                    ScoreText,
+                    Text::new("Score: 0"),
+                    TextFont { font_size: 24.0, ..default() },
+                    TextColor(Color::srgb(1.0, 1.0, 1.0)),
+                ));
+                row.spawn((
+                    CoinsText,
+                    Text::new("Coins: 0"),
+                    TextFont { font_size: 24.0, ..default() },
+                    TextColor(Color::srgb(1.0, 0.85, 0.0)),
+                ));
+            });
+
+            // Combo text (centered, below top row)
             parent.spawn((
-                HealthText,
-                Text::new("Health: 3"),
-                TextFont { font_size: 24.0, ..default() },
-                TextColor(Color::srgb(1.0, 0.3, 0.3)),
+                ComboText,
+                Text::new(""),
+                TextFont { font_size: 28.0, ..default() },
+                TextColor(Color::srgb(1.0, 0.9, 0.2)),
+                Node {
+                    align_self: AlignSelf::Center,
+                    margin: UiRect::top(Val::Px(4.0)),
+                    ..default()
+                },
             ));
+
+            // Powerup bar container
             parent.spawn((
-                ScoreText,
-                Text::new("Score: 0"),
-                TextFont { font_size: 24.0, ..default() },
-                TextColor(Color::srgb(1.0, 1.0, 1.0)),
-            ));
-            parent.spawn((
-                CoinsText,
-                Text::new("Coins: 0"),
-                TextFont { font_size: 24.0, ..default() },
-                TextColor(Color::srgb(1.0, 0.85, 0.0)),
-            ));
+                PowerupBarRoot,
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(12.0),
+                    margin: UiRect::top(Val::Px(4.0)),
+                    ..default()
+                },
+            )).with_children(|bar_root| {
+                // 3 powerup bar slots: Speed (blue), Jump (green), Shield (gold)
+                let bars = [
+                    (0, "SPEED", Color::srgb(0.3, 0.5, 1.0)),
+                    (1, "JUMP", Color::srgb(0.2, 0.9, 0.3)),
+                    (2, "SHIELD", Color::srgb(1.0, 0.85, 0.0)),
+                ];
+                for (idx, label, color) in bars {
+                    bar_root.spawn(Node {
+                        flex_direction: FlexDirection::Column,
+                        display: Display::None, // hidden by default
+                        ..default()
+                    }).with_children(|slot| {
+                        // Label
+                        slot.spawn((
+                            PowerupBarLabel(idx),
+                            Text::new(label),
+                            TextFont { font_size: 11.0, ..default() },
+                            TextColor(color),
+                        ));
+                        // Bar background
+                        slot.spawn(Node {
+                            width: Val::Px(POWERUP_BAR_WIDTH),
+                            height: Val::Px(POWERUP_BAR_HEIGHT),
+                            ..default()
+                        }).insert(BackgroundColor(Color::srgba(0.2, 0.2, 0.2, 0.6)))
+                        .with_children(|bg| {
+                            // Fill bar
+                            bg.spawn((
+                                PowerupBarFill(idx),
+                                Node {
+                                    width: Val::Percent(100.0),
+                                    height: Val::Percent(100.0),
+                                    ..default()
+                                },
+                                BackgroundColor(color),
+                            ));
+                        });
+                    });
+                }
+            });
         });
 }
 
@@ -148,6 +238,67 @@ fn update_hud(
     }
     for mut text in &mut coins_query {
         **text = format!("Coins: {}", coins.count);
+    }
+}
+
+fn update_combo_text(
+    combo: Res<ComboTracker>,
+    mut query: Query<(&mut Text, &mut TextColor), With<ComboText>>,
+) {
+    let Ok((mut text, mut color)) = query.single_mut() else {
+        return;
+    };
+
+    if combo.count > 0 && !combo.display_timer.is_finished() {
+        let multiplier = 2u32.pow(combo.count.min(MAX_COMBO_POWER));
+        **text = format!("x{}!", multiplier);
+        // Fade out as timer progresses
+        let alpha = combo.display_timer.fraction_remaining();
+        color.0 = Color::srgba(1.0, 0.9, 0.2, alpha);
+    } else {
+        **text = String::new();
+    }
+}
+
+fn update_powerup_bars(
+    player_query: Query<(Option<&SpeedBoost>, Option<&TripleJump>, Option<&Shield>), With<Player>>,
+    mut bar_fill_query: Query<(&PowerupBarFill, &mut Node), Without<PowerupBarRoot>>,
+    bar_root_query: Query<&Children, With<PowerupBarRoot>>,
+    mut slot_query: Query<&mut Node, (Without<PowerupBarFill>, Without<PowerupBarRoot>)>,
+) {
+    let Ok((speed, jump, shield)) = player_query.single() else {
+        return;
+    };
+
+    // Collect active states: (slot_index, fill_fraction)
+    let states: [(usize, Option<f32>); 3] = [
+        (0, speed.map(|s| s.timer.fraction_remaining())),
+        (1, jump.map(|j| j.timer.fraction_remaining())),
+        (2, shield.map(|s| Some(s.hits_remaining as f32 / SHIELD_HITS as f32)).unwrap_or(None)),
+    ];
+
+    // Update fill bar widths
+    for (fill, mut node) in &mut bar_fill_query {
+        if let Some((_, active)) = states.iter().find(|(idx, _)| *idx == fill.0) {
+            if let Some(frac) = active {
+                node.width = Val::Percent(frac * 100.0);
+            }
+        }
+    }
+
+    // Show/hide slot containers
+    if let Ok(children) = bar_root_query.single() {
+        for (i, child) in children.iter().enumerate() {
+            if i < 3 {
+                if let Ok(mut node) = slot_query.get_mut(child) {
+                    node.display = if states[i].1.is_some() {
+                        Display::Flex
+                    } else {
+                        Display::None
+                    };
+                }
+            }
+        }
     }
 }
 

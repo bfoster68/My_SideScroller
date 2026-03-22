@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use crate::animation::PlayerAnimState;
 use crate::audio::AudioHandles;
 use crate::constants::*;
-use crate::player::Player;
+use crate::player::{Player, Velocity};
 use crate::powerups::Shield;
 use crate::state::GameState;
 
@@ -33,6 +33,13 @@ pub struct Invincible {
 #[derive(Message)]
 pub struct DamageEvent {
     pub amount: i32,
+    pub source_pos: Option<Vec2>,
+}
+
+/// Applied to the player during knockback — reduces input control.
+#[derive(Component)]
+pub struct Knockback {
+    pub timer: Timer,
 }
 
 /// Message fired when the player dies (health reaches 0).
@@ -53,7 +60,7 @@ impl Plugin for HealthPlugin {
             .add_message::<PlayerDeathEvent>()
             .add_systems(
                 Update,
-                (apply_damage, tick_death_animation, tick_invincibility, flash_invincible)
+                (apply_damage, tick_knockback, tick_death_animation, tick_invincibility, flash_invincible)
                     .chain()
                     .run_if(in_state(GameState::Playing)),
             );
@@ -66,12 +73,12 @@ fn apply_damage(
     mut damage_events: MessageReader<DamageEvent>,
     mut death_events: MessageWriter<PlayerDeathEvent>,
     mut query: Query<
-        (Entity, &mut Health, Option<&Invincible>, Option<&DeathTimer>, Option<&mut Shield>),
+        (Entity, &Transform, &mut Health, &mut Velocity, Option<&Invincible>, Option<&DeathTimer>, Option<&mut Shield>),
         With<Player>,
     >,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
-    let Ok((entity, mut health, invincible, death_timer, mut shield)) = query.single_mut()
+    let Ok((entity, player_tf, mut health, mut velocity, invincible, death_timer, mut shield)) = query.single_mut()
     else {
         return;
     };
@@ -107,6 +114,9 @@ fn apply_damage(
                     crate::audio::spawn_sfx_at_volume(&mut commands, handle, 0.35);
                 }
             }
+            // Clear any active hit-freeze so the death animation isn't
+            // stuck in slow-motion (HitFreeze slows virtual time to ~2%).
+            commands.remove_resource::<crate::camera::HitFreeze>();
             // Start death animation instead of immediate GameOver
             commands.entity(entity).insert((
                 DeathTimer {
@@ -119,7 +129,33 @@ fn apply_damage(
             commands.entity(entity).insert(Invincible {
                 timer: Timer::from_seconds(INVINCIBILITY_DURATION, TimerMode::Once),
             });
+
+            // Apply knockback away from damage source
+            if let Some(src) = event.source_pos {
+                let player_pos = Vec2::new(player_tf.translation.x, player_tf.translation.y);
+                let dir = (player_pos - src).normalize_or_zero();
+                velocity.0.x = dir.x * KNOCKBACK_FORCE;
+                velocity.0.y = KNOCKBACK_LIFT;
+                commands.entity(entity).insert(Knockback {
+                    timer: Timer::from_seconds(KNOCKBACK_DURATION, TimerMode::Once),
+                });
+            }
         }
+    }
+}
+
+/// Tick knockback timer and remove when expired.
+fn tick_knockback(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut Knockback), With<Player>>,
+) {
+    let Ok((entity, mut kb)) = query.single_mut() else {
+        return;
+    };
+    kb.timer.tick(time.delta());
+    if kb.timer.is_finished() {
+        commands.entity(entity).remove::<Knockback>();
     }
 }
 

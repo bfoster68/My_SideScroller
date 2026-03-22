@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use rand::Rng;
 
+use crate::breakable::{spawn_breakable_platform, BreakableGroupCounter};
 use crate::checkpoint::{CheckpointData, CheckpointFlag, section_colors};
 use crate::collectibles::{spawn_coin, spawn_coin_at, spawn_coin_on_moving, Coin};
 use crate::constants::*;
@@ -13,10 +14,15 @@ use crate::hazards::{
     spawn_spike_on_moving, spawn_timed_trap, BoulderSpawner, FallingBoulder, Lava, Saw, Spike,
     TimedTrap,
 };
-use crate::player::{PlayerMovementSet, Score};
+use crate::player::{Player, PlayerMovementSet, Score};
 use crate::powerups::{spawn_powerup, PowerupKind};
+use crate::save::ResumeFromCheckpoint;
 use crate::sprites::GameSprites;
 use crate::state::GameState;
+
+/// System set for level reset on play start — runs after player position is set.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LevelResetSet;
 
 #[derive(Component)]
 pub struct Platform;
@@ -46,6 +52,10 @@ pub struct ChunkTracker {
     pub rightmost_ground_x: f32,
     pub rightmost_platform_x: f32,
     pub last_platform_y: f32,
+    /// How many consecutive ground gaps have been generated.
+    pub consecutive_ground_gaps: u32,
+    /// X position where the last LDtk chunk was placed (for spacing).
+    pub last_ldtk_chunk_x: f32,
 }
 
 impl Default for ChunkTracker {
@@ -54,6 +64,8 @@ impl Default for ChunkTracker {
             rightmost_ground_x: SPAWN_X - 200.0,
             rightmost_platform_x: SPAWN_X,
             last_platform_y: GROUND_Y + GROUND_HEIGHT / 2.0 + 80.0,
+            consecutive_ground_gaps: 0,
+            last_ldtk_chunk_x: SPAWN_X - LDTK_CHUNK_MIN_SPACING * 2.0,
         }
     }
 }
@@ -64,12 +76,17 @@ pub struct Difficulty {
     pub value: f32,
 }
 
+/// Timer for periodic debug logging.
+#[derive(Resource)]
+struct GenDebugTimer(Timer);
+
 pub struct LevelPlugin;
 
 impl Plugin for LevelPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ChunkTracker>()
             .init_resource::<Difficulty>()
+            .insert_resource(GenDebugTimer(Timer::from_seconds(2.0, TimerMode::Repeating)))
             .add_systems(
                 Update,
                 (
@@ -77,84 +94,112 @@ impl Plugin for LevelPlugin {
                     generate_chunks,
                     despawn_behind_camera,
                     moving_platform_system,
+                    debug_generation,
                 )
                     .chain()
                     .before(PlayerMovementSet)
                     .run_if(in_state(GameState::Playing)),
             )
-            .add_systems(OnEnter(GameState::Playing), reset_level_if_needed);
+            .add_systems(OnEnter(GameState::Playing), reset_level_if_needed
+                .in_set(LevelResetSet)
+                .after(crate::player::PlayResetSet));
     }
 }
 
-/// Reset level state when starting a new game (from Menu or GameOver).
+fn debug_generation(
+    time: Res<Time>,
+    mut timer: ResMut<GenDebugTimer>,
+    tracker: Res<ChunkTracker>,
+    camera_query: Query<&Transform, With<Camera2d>>,
+    player_query: Query<&Transform, (With<Player>, Without<Camera2d>)>,
+    platform_query: Query<Entity, (With<Platform>, Without<ChildOf>)>,
+) {
+    timer.0.tick(time.delta());
+    if !timer.0.just_finished() { return; }
+
+    let cam_x = camera_query.single().map(|t| t.translation.x).unwrap_or(0.0);
+    let plyr_x = player_query.single().map(|t| t.translation.x).unwrap_or(0.0);
+    let plat_count = platform_query.iter().count();
+
+    info!("DBG: cam={:.0} plyr={:.0} trk_gnd={:.0} trk_plat={:.0} plats={} gen_to={:.0}",
+        cam_x, plyr_x, tracker.rightmost_ground_x, tracker.rightmost_platform_x,
+        plat_count, cam_x.max(plyr_x) + GENERATE_AHEAD);
+}
+
+/// Reset level state when starting a new game or resuming from checkpoint.
+/// On resume, positions the chunk tracker near the checkpoint so terrain
+/// generates around the player instead of at the beginning.
 fn reset_level_if_needed(
     mut commands: Commands,
     mut chunk_tracker: ResMut<ChunkTracker>,
     mut difficulty: ResMut<Difficulty>,
-    platform_query: Query<Entity, With<Platform>>,
-    enemy_query: Query<Entity, With<Enemy>>,
-    coin_query: Query<Entity, With<Coin>>,
-    spike_query: Query<Entity, With<Spike>>,
-    saw_query: Query<Entity, (With<Saw>, Without<Platform>)>,
-    lava_query: Query<Entity, With<Lava>>,
-    projectile_query: Query<Entity, With<Projectile>>,
-    powerup_query: Query<Entity, With<PowerupKind>>,
-    boulder_spawner_query: Query<Entity, With<BoulderSpawner>>,
-    boulder_query: Query<Entity, With<FallingBoulder>>,
-    timed_trap_query: Query<Entity, With<TimedTrap>>,
-    checkpoint_flag_query: Query<Entity, With<CheckpointFlag>>,
+    mut group_counter: ResMut<BreakableGroupCounter>,
+    checkpoint: Res<CheckpointData>,
+    resume: Option<Res<ResumeFromCheckpoint>>,
+    prev_state: Res<crate::state::PreviousGameState>,
+    // Single broad query for all level entities — Without<ChildOf> so recursive despawn
+    // handles children automatically without double-despawn warnings.
+    level_entities: Query<
+        Entity,
+        (
+            Or<(
+                With<Platform>,
+                With<Enemy>,
+                With<Coin>,
+                With<Spike>,
+                With<Saw>,
+                With<Lava>,
+                With<Projectile>,
+                With<PowerupKind>,
+                With<BoulderSpawner>,
+                With<FallingBoulder>,
+                With<TimedTrap>,
+                With<CheckpointFlag>,
+            )>,
+            Without<ChildOf>,
+        ),
+    >,
 ) {
-    // Only reset if there are already platforms (coming from GameOver).
-    // On first play from Menu, there will be none, and chunks will generate naturally.
-    if platform_query.is_empty() {
+    // Coming back from Pause or Settings — level is still intact, do nothing.
+    if matches!(
+        prev_state.0,
+        Some(crate::state::GameState::Paused) | Some(crate::state::GameState::Settings)
+    ) {
         return;
     }
 
-    // Despawn everything (recursive handles child decor)
-    for entity in &platform_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &enemy_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &coin_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &spike_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &saw_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &lava_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &projectile_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &powerup_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &boulder_spawner_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &boulder_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &timed_trap_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &checkpoint_flag_query {
+    let is_resume = resume.is_some();
+
+    // Despawn all existing level entities (recursive despawn handles children)
+    for entity in &level_entities {
         commands.entity(entity).despawn();
     }
 
-    // Reset trackers
-    *chunk_tracker = ChunkTracker::default();
-    difficulty.value = 0.0;
+    group_counter.0 = 0;
+
+    if is_resume {
+        // Position chunk tracker near the checkpoint so terrain generates around the player
+        let cx = checkpoint.checkpoint_x;
+        chunk_tracker.rightmost_ground_x = cx - 200.0;
+        chunk_tracker.rightmost_platform_x = cx - 100.0;
+        chunk_tracker.last_platform_y = checkpoint.checkpoint_y.max(GROUND_Y + GROUND_HEIGHT / 2.0 + 80.0);
+        chunk_tracker.consecutive_ground_gaps = 0;
+        chunk_tracker.last_ldtk_chunk_x = cx - LDTK_CHUNK_MIN_SPACING * 2.0;
+
+        // Restore difficulty to match the checkpoint score
+        difficulty.value = (checkpoint.last_checkpoint_score as f32 / DIFFICULTY_SCORE_MAX).min(1.0);
+    } else {
+        // Fresh start
+        *chunk_tracker = ChunkTracker::default();
+        difficulty.value = 0.0;
+    }
 }
 
 /// Update difficulty based on current score.
 fn update_difficulty(score: Res<Score>, mut difficulty: ResMut<Difficulty>) {
+    if !score.is_changed() {
+        return;
+    }
     difficulty.value = (score.value as f32 / DIFFICULTY_SCORE_MAX).min(1.0);
 }
 
@@ -173,14 +218,22 @@ fn generate_chunks(
     mut tracker: ResMut<ChunkTracker>,
     difficulty: Res<Difficulty>,
     camera_query: Query<&Transform, With<Camera2d>>,
+    player_query: Query<&Transform, (With<Player>, Without<Camera2d>)>,
     game_sprites: Res<GameSprites>,
     checkpoint_data: Res<CheckpointData>,
+    mut group_counter: ResMut<BreakableGroupCounter>,
+    chunk_pool: Res<crate::ldtk_chunks::ChunkPool>,
 ) {
     let Ok(camera_tf) = camera_query.single() else {
         return;
     };
-    let camera_x = camera_tf.translation.x;
-    let generate_to = camera_x + GENERATE_AHEAD;
+    // Use the further-right of camera or player position, so terrain always
+    // generates around the player even before the camera has caught up.
+    let mut ref_x = camera_tf.translation.x;
+    if let Ok(player_tf) = player_query.single() {
+        ref_x = ref_x.max(player_tf.translation.x);
+    }
+    let generate_to = ref_x + GENERATE_AHEAD;
 
     let mut rng = rand::thread_rng();
     let d = difficulty.value;
@@ -193,12 +246,15 @@ fn generate_chunks(
     while tracker.rightmost_ground_x < generate_to {
         let seg_x = tracker.rightmost_ground_x + GROUND_SEGMENT_WIDTH / 2.0;
 
-        // First two segments always solid, then chance of gaps
+        // First two segments always solid, then chance of gaps.
+        // Never allow more than 2 consecutive gaps — force solid ground so
+        // the player always has a path forward.
         let is_gap = tracker.rightmost_ground_x > SPAWN_X + GROUND_SEGMENT_WIDTH
+            && tracker.consecutive_ground_gaps < 2
             && rng.gen_bool(gap_chance);
 
         if !is_gap {
-            spawn_platform(
+            let _ = spawn_platform(
                 &mut commands,
                 seg_x,
                 GROUND_Y,
@@ -207,9 +263,11 @@ fn generate_chunks(
                 ground_color,
                 true,
             );
+            tracker.consecutive_ground_gaps = 0;
         } else {
             // Fill ground gap with lava
             spawn_lava(&mut commands, seg_x, GROUND_SEGMENT_WIDTH, game_sprites.lava.clone());
+            tracker.consecutive_ground_gaps += 1;
         }
 
         tracker.rightmost_ground_x += GROUND_SEGMENT_WIDTH;
@@ -228,6 +286,45 @@ fn generate_chunks(
     let mut color_idx: usize = 0;
 
     while tracker.rightmost_platform_x < generate_to {
+        // --- Try placing an LDtk hand-designed chunk ---
+        let ldtk_spacing_ok = (tracker.rightmost_platform_x - tracker.last_ldtk_chunk_x)
+            > LDTK_CHUNK_MIN_SPACING;
+        if chunk_pool.loaded && ldtk_spacing_ok && rng.gen_bool(LDTK_CHUNK_CHANCE) {
+            if let Some(template) = crate::ldtk_chunks::select_chunk(
+                &chunk_pool,
+                d,
+                tracker.last_platform_y,
+                MAX_JUMP_HEIGHT,
+                &mut rng,
+            ) {
+                let offset_x = tracker.rightmost_platform_x + min_gap;
+                // Align chunk entry_y with current platform height
+                let base_y = tracker.last_platform_y - template.entry_y;
+
+                let chunk_width = crate::ldtk_chunks::spawn_chunk(
+                    &mut commands,
+                    template,
+                    offset_x,
+                    base_y,
+                    &game_sprites,
+                    checkpoint_data.section,
+                    &mut group_counter,
+                );
+
+                tracker.rightmost_platform_x = offset_x + chunk_width;
+                tracker.last_platform_y = base_y + template.exit_y;
+                tracker.last_ldtk_chunk_x = offset_x;
+
+                // Advance ground tracker past chunk if it provides ground
+                if template.has_ground {
+                    tracker.rightmost_ground_x =
+                        tracker.rightmost_ground_x.max(offset_x + chunk_width);
+                }
+                continue;
+            }
+        }
+
+        // --- Procedural platform generation (fallback) ---
         let dx = rng.gen_range(min_gap..max_gap);
         let dy = rng.gen_range(-MAX_JUMP_HEIGHT..MAX_JUMP_HEIGHT);
 
@@ -243,8 +340,10 @@ fn generate_chunks(
         let color = plat_colors[color_idx % plat_colors.len()];
         color_idx += 1;
 
-        // Maybe make it a moving platform
+        // Maybe make it a moving or breakable platform
         let is_moving = rng.gen_bool(moving_chance.min(0.5));
+        let breakable_chance = lerp_diff(BREAKABLE_MIN_CHANCE as f32, BREAKABLE_MAX_CHANCE as f32, d) as f64;
+        let is_breakable = !is_moving && rng.gen_bool(breakable_chance.min(0.5));
         if is_moving {
             let plat_entity = spawn_moving_platform(
                 &mut commands,
@@ -282,8 +381,34 @@ fn generate_chunks(
                     spawn_coin_on_moving(parent, img);
                 });
             }
+        } else if is_breakable {
+            // Breakable platform: row of destructible blocks
+            let num_blocks = rng.gen_range(BREAKABLE_MIN_BLOCKS..=BREAKABLE_MAX_BLOCKS);
+            group_counter.0 += 1;
+            let _actual_width = spawn_breakable_platform(
+                &mut commands,
+                new_x,
+                new_y,
+                num_blocks,
+                group_counter.0,
+            );
+
+            // Place entities on breakable platforms (coins only — no enemies/hazards)
+            let roll: f64 = rng.gen();
+            if roll < coin_chance {
+                if rng.gen_bool(POWERUP_SPAWN_CHANCE) {
+                    spawn_powerup(
+                        &mut commands, new_x, new_y,
+                        game_sprites.powerup_speed.clone(),
+                        game_sprites.powerup_jump.clone(),
+                        game_sprites.powerup_shield.clone(),
+                    );
+                } else {
+                    spawn_coin(&mut commands, new_x, new_y, game_sprites.coin.clone());
+                }
+            }
         } else {
-            spawn_platform(
+            let plat_entity = spawn_platform(
                 &mut commands,
                 new_x,
                 new_y,
@@ -425,34 +550,50 @@ fn generate_chunks(
 }
 
 /// Despawn entities that have fallen far behind the camera.
+/// Uses Transform (not GlobalTransform) because all queried entities are root
+/// entities (Without<ChildOf>), so Transform IS their world position.  Using
+/// GlobalTransform here would cause newly-spawned entities to be despawned
+/// immediately because GlobalTransform isn't propagated until PostUpdate.
+/// Uses the minimum of camera and player X to avoid despawning terrain around the
+/// player when the camera hasn't caught up yet (e.g., after respawn).
 fn despawn_behind_camera(
     mut commands: Commands,
     camera_query: Query<&Transform, With<Camera2d>>,
+    player_query: Query<&Transform, (With<Player>, Without<Camera2d>)>,
     query: Query<
         (Entity, &Transform),
-        Or<(
-            With<Platform>,
-            With<Enemy>,
-            With<Coin>,
-            With<Spike>,
-            With<Saw>,
-            With<Lava>,
-            With<Projectile>,
-            With<PowerupKind>,
-            With<BoulderSpawner>,
-            With<FallingBoulder>,
-            With<TimedTrap>,
-            With<CheckpointFlag>,
-        )>,
+        (
+            Or<(
+                With<Platform>,
+                With<Enemy>,
+                With<Coin>,
+                With<Spike>,
+                With<Saw>,
+                With<Lava>,
+                With<Projectile>,
+                With<PowerupKind>,
+                With<BoulderSpawner>,
+                With<FallingBoulder>,
+                With<TimedTrap>,
+                With<CheckpointFlag>,
+            )>,
+            Without<ChildOf>,
+        ),
     >,
 ) {
     let Ok(camera_tf) = camera_query.single() else {
         return;
     };
-    let cutoff = camera_tf.translation.x - DESPAWN_BEHIND;
+    // Use the leftmost of camera or player position so we never despawn
+    // terrain around the player before the camera catches up.
+    let mut ref_x = camera_tf.translation.x;
+    if let Ok(player_tf) = player_query.single() {
+        ref_x = ref_x.min(player_tf.translation.x);
+    }
+    let cutoff = ref_x - DESPAWN_BEHIND;
 
-    for (entity, transform) in &query {
-        if transform.translation.x < cutoff {
+    for (entity, tf) in &query {
+        if tf.translation.x < cutoff {
             commands.entity(entity).despawn();
         }
     }
@@ -471,8 +612,8 @@ fn moving_platform_system(
     }
 }
 
-/// Spawn a platform with visual surface highlights.
-fn spawn_platform(
+/// Spawn a platform with visual surface highlights. Returns the entity.
+pub fn spawn_platform(
     commands: &mut Commands,
     x: f32,
     y: f32,
@@ -480,7 +621,7 @@ fn spawn_platform(
     height: f32,
     color: Color,
     is_ground: bool,
-) {
+) -> Entity {
     let highlight = if is_ground {
         Color::srgb(0.45, 0.55, 0.3)
     } else {
@@ -521,11 +662,11 @@ fn spawn_platform(
                 PlatformDecor,
             ));
         }
-    });
+    }).id()
 }
 
 /// Spawn a platform that also has the MovingPlatform component.
-fn spawn_moving_platform(
+pub fn spawn_moving_platform(
     commands: &mut Commands,
     x: f32,
     y: f32,

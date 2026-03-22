@@ -1,15 +1,28 @@
 use bevy::diagnostic::{DiagnosticsStore, EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
 
+use crate::checkpoint::CheckpointData;
+use crate::constants::MAX_HEALTH;
+use crate::enemies::{ChargingEnemy, Enemy, FlyingEnemy, FlyingRangedEnemy, Projectile, ShooterEnemy};
+use crate::health::{Health, Invincible};
+use crate::level::Difficulty;
+use crate::particles::Particle;
+use crate::player::{Player, Score, Velocity};
+use crate::state::GameState;
+
+/// When active, player is permanently invincible (god mode).
+#[derive(Resource, Default)]
+pub struct GodMode(pub bool);
+
 /// Marker for debug overlay root node.
 #[derive(Component)]
 struct DebugRoot;
 
-/// Marker for the FPS text element.
+/// Marker for the debug text element.
 #[derive(Component)]
-struct DebugFpsText;
+struct DebugText;
 
-/// Whether the debug FPS overlay is currently visible.
+/// Whether the debug overlay is currently visible.
 #[derive(Resource, Default)]
 struct DebugVisible(bool);
 
@@ -20,7 +33,8 @@ impl Plugin for DebugPlugin {
         app.add_plugins(FrameTimeDiagnosticsPlugin::default())
             .add_plugins(EntityCountDiagnosticsPlugin::default())
             .init_resource::<DebugVisible>()
-            .add_systems(Update, (toggle_debug_overlay, update_fps_text));
+            .init_resource::<GodMode>()
+            .add_systems(Update, (toggle_debug_overlay, update_debug_text, debug_cheats));
     }
 }
 
@@ -36,10 +50,8 @@ fn toggle_debug_overlay(
     }
 
     visible.0 = !visible.0;
-    info!("Debug overlay toggled: {}", visible.0);
 
     if visible.0 {
-        // Spawn FPS overlay in top-right corner
         commands
             .spawn((
                 DebugRoot,
@@ -48,32 +60,48 @@ fn toggle_debug_overlay(
                     right: Val::Px(16.0),
                     top: Val::Px(48.0),
                     padding: UiRect::all(Val::Px(8.0)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(2.0),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
                 ZIndex(99),
             ))
             .with_children(|parent| {
                 parent.spawn((
-                    DebugFpsText,
-                    Text::new("FPS: --"),
-                    TextFont { font_size: 18.0, ..default() },
+                    DebugText,
+                    Text::new("Loading..."),
+                    TextFont { font_size: 20.0, ..default() },
                     TextColor(Color::srgb(0.0, 1.0, 0.0)),
                 ));
             });
     } else {
-        // Despawn overlay and children
         for entity in &overlay_query {
             commands.entity(entity).despawn();
         }
     }
 }
 
-/// Update FPS text from diagnostics.
-fn update_fps_text(
+/// Update debug text with comprehensive game metrics.
+fn update_debug_text(
     visible: Res<DebugVisible>,
     diagnostics: Res<DiagnosticsStore>,
-    mut query: Query<&mut Text, With<DebugFpsText>>,
+    mut text_query: Query<&mut Text, With<DebugText>>,
+    god_mode: Res<GodMode>,
+    // Player info
+    player_query: Query<(&Transform, &Velocity), With<Player>>,
+    // Game state
+    difficulty: Res<Difficulty>,
+    score: Res<Score>,
+    checkpoint: Res<CheckpointData>,
+    // Entity counts
+    enemy_query: Query<(), With<Enemy>>,
+    flying_query: Query<(), With<FlyingEnemy>>,
+    shooter_query: Query<(), With<ShooterEnemy>>,
+    charging_query: Query<(), With<ChargingEnemy>>,
+    flying_ranged_query: Query<(), With<FlyingRangedEnemy>>,
+    particle_query: Query<(), With<Particle>>,
+    projectile_query: Query<(), With<Projectile>>,
 ) {
     if !visible.0 {
         return;
@@ -89,7 +117,104 @@ fn update_fps_text(
         .and_then(|d| d.value())
         .unwrap_or(0.0) as u32;
 
-    for mut text in &mut query {
-        **text = format!("FPS: {:.0}  |  Entities: {}", fps, entity_count);
+    // Player state
+    let (player_pos, player_vel) = if let Ok((tf, vel)) = player_query.single() {
+        (
+            format!("({:.0}, {:.0})", tf.translation.x, tf.translation.y),
+            format!("({:.0}, {:.0})", vel.0.x, vel.0.y),
+        )
+    } else {
+        ("--".to_string(), "--".to_string())
+    };
+
+    // Enemy counts
+    let total_enemies = enemy_query.iter().count();
+    let walkers = total_enemies
+        - flying_query.iter().count()
+        - shooter_query.iter().count()
+        - charging_query.iter().count()
+        - flying_ranged_query.iter().count();
+    let flyers = flying_query.iter().count();
+    let shooters = shooter_query.iter().count();
+    let chargers = charging_query.iter().count();
+    let ranged = flying_ranged_query.iter().count();
+    let particles = particle_query.iter().count();
+    let projectiles = projectile_query.iter().count();
+
+    let god = if god_mode.0 { " [GOD]" } else { "" };
+
+    let debug_text = format!(
+        "FPS: {:.0}  |  Entities: {}{}\n\
+         Pos: {}  Vel: {}\n\
+         Score: {}  |  Difficulty: {:.0}%\n\
+         Section: {}  |  Checkpoint: {}\n\
+         Enemies: {} (W:{} F:{} S:{} C:{} R:{})\n\
+         Particles: {}/{}  |  Projectiles: {}\n\
+         0:God  9:Heal",
+        fps,
+        entity_count,
+        god,
+        player_pos,
+        player_vel,
+        score.value,
+        difficulty.value * 100.0,
+        checkpoint.section,
+        checkpoint.last_checkpoint_score,
+        total_enemies, walkers, flyers, shooters, chargers, ranged,
+        particles, MAX_PARTICLES,
+        projectiles,
+    );
+
+    for mut text in &mut text_query {
+        **text = debug_text.clone();
+    }
+}
+
+use crate::constants::MAX_PARTICLES;
+
+/// Debug cheats: 0 = toggle god mode, 9 = refill health.
+fn debug_cheats(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut god_mode: ResMut<GodMode>,
+    mut player_query: Query<(Entity, &mut Health), With<Player>>,
+    state: Res<State<GameState>>,
+) {
+    if *state.get() != GameState::Playing {
+        return;
+    }
+
+    // 0: Toggle god mode (permanent invincibility)
+    if keyboard.just_pressed(KeyCode::Digit0) {
+        god_mode.0 = !god_mode.0;
+        if let Ok((entity, _)) = player_query.single_mut() {
+            if god_mode.0 {
+                // Insert a very long invincibility
+                commands.entity(entity).insert(Invincible {
+                    timer: Timer::from_seconds(999999.0, TimerMode::Once),
+                });
+                info!("GOD MODE: ON");
+            } else {
+                commands.entity(entity).remove::<Invincible>();
+                info!("GOD MODE: OFF");
+            }
+        }
+    }
+
+    // 9: Refill health to max
+    if keyboard.just_pressed(KeyCode::Digit9) {
+        if let Ok((_, mut health)) = player_query.single_mut() {
+            health.current = MAX_HEALTH;
+            info!("HEALTH REFILLED");
+        }
+    }
+
+    // Re-apply god mode invincibility if it expired or was removed
+    if god_mode.0 {
+        if let Ok((entity, _)) = player_query.single_mut() {
+            commands.entity(entity).insert(Invincible {
+                timer: Timer::from_seconds(999999.0, TimerMode::Once),
+            });
+        }
     }
 }

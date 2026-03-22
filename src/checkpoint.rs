@@ -105,21 +105,32 @@ fn reset_checkpoint_data(
     mut commands: Commands,
     flags: Query<Entity, With<CheckpointFlag>>,
     resume: Option<Res<ResumeFromCheckpoint>>,
+    prev_state: Res<crate::state::PreviousGameState>,
 ) {
+    // Coming back from Pause or Settings — nothing to reset.
+    if matches!(
+        prev_state.0,
+        Some(crate::state::GameState::Paused) | Some(crate::state::GameState::Settings)
+    ) {
+        return;
+    }
+
     // If resuming from checkpoint, don't reset — just mark as initialized
     if resume.is_some() {
         data.initialized = true;
         return;
     }
 
-    // Only reset if we're coming from GameOver (data was initialized)
-    if data.initialized {
-        *data = CheckpointData::default();
+    // New game — always clear checkpoint data (whether from GameOver or fresh Menu start)
+    let had_data = data.last_checkpoint_score > 0 || data.initialized;
+    *data = CheckpointData::default();
+    data.initialized = true;
+
+    if had_data {
         for entity in &flags {
             commands.entity(entity).despawn();
         }
     }
-    data.initialized = true;
 }
 
 /// Check if we've crossed a checkpoint threshold.

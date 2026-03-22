@@ -1,5 +1,6 @@
 mod animation;
 mod audio;
+mod breakable;
 mod camera;
 mod checkpoint;
 mod collectibles;
@@ -11,8 +12,9 @@ mod health;
 mod highscore;
 mod hud;
 mod input;
+mod ldtk_chunks;
 mod level;
-mod parallax;
+mod mountain_bg;
 mod particles;
 mod player;
 mod powerups;
@@ -29,6 +31,8 @@ fn main() {
             primary_window: Some(Window {
                 title: "My Side-Scroller".into(),
                 resolution: WindowResolution::new(1280, 720),
+                canvas: Some("#bevy-canvas".into()),
+                fit_canvas_to_parent: true,
                 ..default()
             }),
             ..default()
@@ -41,11 +45,13 @@ fn main() {
         .add_plugins(state::StatePlugin)
         .add_plugins(camera::CameraPlugin)
         .add_plugins(player::PlayerPlugin)
+        .add_plugins(ldtk_chunks::LdtkChunksPlugin)
         .add_plugins(level::LevelPlugin)
+        .add_plugins(breakable::BreakablePlugin)
         .add_plugins(health::HealthPlugin)
         .add_plugins(hud::HudPlugin)
         .add_plugins(animation::AnimationPlugin)
-        .add_plugins(parallax::ParallaxPlugin)
+        .add_plugins(mountain_bg::MountainBgPlugin)
         .add_plugins(particles::ParticlesPlugin)
         .add_plugins(enemies::EnemiesPlugin)
         .add_plugins(collectibles::CollectiblesPlugin)

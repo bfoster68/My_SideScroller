@@ -1,11 +1,11 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::fs;
 
 use crate::audio::GameSettings;
 use crate::checkpoint::CheckpointData;
-use crate::constants::{HIGHSCORE_FILE, SAVE_FILE};
 use crate::highscore::HighScore;
+
+const SAVE_KEY: &str = "my_sidescroller_save";
 
 /// Serializable save data — everything that persists between sessions.
 #[derive(Serialize, Deserialize, Default)]
@@ -36,6 +36,44 @@ impl Plugin for SavePlugin {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Platform-specific storage helpers
+// ---------------------------------------------------------------------------
+
+/// Read save data string from storage.
+fn read_storage() -> Option<String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use crate::constants::SAVE_FILE;
+        std::fs::read_to_string(SAVE_FILE).ok()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let window = web_sys::window()?;
+        let storage = window.local_storage().ok()??;
+        storage.get_item(SAVE_KEY).ok()?
+    }
+}
+
+/// Write save data string to storage.
+fn write_storage(json: &str) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use crate::constants::SAVE_FILE;
+        if let Err(e) = std::fs::write(SAVE_FILE, json) {
+            warn!("Failed to write save file: {}", e);
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let Some(window) = web_sys::window() else { return };
+        let Ok(Some(storage)) = window.local_storage() else { return };
+        if let Err(e) = storage.set_item(SAVE_KEY, json) {
+            warn!("Failed to write localStorage: {:?}", e);
+        }
+    }
+}
+
 /// Load save data at startup, populating GameSettings, HighScore, and CheckpointData.
 /// Migrates legacy highscore.dat if save.json doesn't exist yet.
 fn load_save_data(
@@ -43,7 +81,7 @@ fn load_save_data(
     mut high_score: ResMut<HighScore>,
     mut checkpoint: ResMut<CheckpointData>,
 ) {
-    if let Ok(contents) = fs::read_to_string(SAVE_FILE) {
+    if let Some(contents) = read_storage() {
         if let Ok(data) = serde_json::from_str::<SaveData>(&contents) {
             high_score.value = data.high_score;
             settings.master_volume = data.master_volume;
@@ -65,18 +103,21 @@ fn load_save_data(
         }
     }
 
-    // Migration: check for legacy highscore.dat
-    if let Ok(contents) = fs::read_to_string(HIGHSCORE_FILE) {
-        if let Ok(value) = contents.trim().parse::<u32>() {
-            high_score.value = value;
-            info!("Migrated high score from highscore.dat: {}", value);
-            // Save in new format
-            save_to_disk(&settings, &high_score, &checkpoint);
+    // Migration: check for legacy highscore.dat (native only)
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use crate::constants::HIGHSCORE_FILE;
+        if let Ok(contents) = std::fs::read_to_string(HIGHSCORE_FILE) {
+            if let Ok(value) = contents.trim().parse::<u32>() {
+                high_score.value = value;
+                info!("Migrated high score from highscore.dat: {}", value);
+                save_to_disk(&settings, &high_score, &checkpoint);
+            }
         }
     }
 }
 
-/// Write current game state to save.json.
+/// Write current game state to persistent storage.
 pub fn save_to_disk(
     settings: &GameSettings,
     high_score: &HighScore,
@@ -96,11 +137,7 @@ pub fn save_to_disk(
     };
 
     match serde_json::to_string_pretty(&data) {
-        Ok(json) => {
-            if let Err(e) = fs::write(SAVE_FILE, json) {
-                warn!("Failed to write save file: {}", e);
-            }
-        }
+        Ok(json) => write_storage(&json),
         Err(e) => {
             warn!("Failed to serialize save data: {}", e);
         }

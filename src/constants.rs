@@ -60,10 +60,6 @@ pub const MAX_HEALTH: i32 = 3;
 pub const INVINCIBILITY_DURATION: f32 = 1.5;
 pub const INVINCIBILITY_FLASH_RATE: f32 = 10.0;
 
-// Parallax background
-pub const PARALLAX_FAR_SPEED: f32 = 0.05;
-pub const PARALLAX_MID_SPEED: f32 = 0.15;
-pub const PARALLAX_NEAR_SPEED: f32 = 0.3;
 
 // Particles
 pub const PARTICLE_LIFETIME: f32 = 0.5;
@@ -88,11 +84,14 @@ pub const FLYING_ENEMY_AMPLITUDE: f32 = 40.0;
 pub const FLYING_ENEMY_FREQUENCY: f32 = 2.0;
 pub const FLYING_ENEMY_Z: f32 = 0.8;
 
-// Shooter enemy
+// Shooter enemy (fire rate and speed scale with difficulty)
 pub const SHOOTER_WIDTH: f32 = 40.0;
 pub const SHOOTER_HEIGHT: f32 = 48.0;
-pub const SHOOTER_FIRE_INTERVAL: f32 = 2.0;
-pub const PROJECTILE_SPEED: f32 = 200.0;
+pub const SHOOTER_FIRE_INTERVAL_MAX: f32 = 2.5; // slow at low difficulty
+pub const SHOOTER_FIRE_INTERVAL_MIN: f32 = 1.2; // fast at high difficulty
+pub const SHOOTER_RANGE: f32 = 600.0; // only fire when player is within range
+pub const PROJECTILE_SPEED_MIN: f32 = 160.0;
+pub const PROJECTILE_SPEED_MAX: f32 = 280.0;
 pub const PROJECTILE_SIZE: f32 = 8.0;
 pub const PROJECTILE_DAMAGE: i32 = 1;
 pub const PROJECTILE_Z: f32 = 0.75;
@@ -160,8 +159,8 @@ pub const SECTION_BONUS_SCORE: u32 = 250;
 
 // Charging enemy
 pub const CHARGING_ENEMY_SPEED: f32 = 240.0;
-pub const CHARGING_DETECT_RANGE: f32 = 300.0;
-pub const CHARGING_WIND_TIME: f32 = 0.3;
+pub const CHARGING_DETECT_RANGE: f32 = 220.0;
+pub const CHARGING_WIND_TIME: f32 = 0.45;
 pub const CHARGING_DURATION: f32 = 1.5;
 pub const CHARGING_RECOVERY: f32 = 0.5;
 pub const CHARGING_ENEMY_WIDTH: f32 = 44.0;
@@ -195,7 +194,62 @@ pub const RESOLUTION_LABELS: [&str; 3] = ["1280x720", "1920x1080", "2560x1440"];
 // Performance
 pub const MAX_PARTICLES: usize = 200;
 
+// Breakable blocks
+pub const BLOCK_WIDTH: f32 = 32.0;
+pub const BLOCK_HEIGHT: f32 = 20.0; // matches PLATFORM_HEIGHT
+pub const BLOCK_MAX_HEALTH: i32 = 3;
+pub const BLOCK_DAMAGE_PER_STOMP: i32 = 1;
+pub const BLOCK_PARTICLE_COUNT: usize = 6;
+pub const BLOCK_HIT_PARTICLE_COUNT: usize = 3;
+pub const BREAKABLE_MIN_CHANCE: f64 = 0.10;  // 10% at difficulty 0
+pub const BREAKABLE_MAX_CHANCE: f64 = 0.45;  // 45% at max difficulty
+pub const BREAKABLE_MIN_BLOCKS: usize = 3;
+pub const BREAKABLE_MAX_BLOCKS: usize = 7;
+pub const BREAKABLE_SCORE_PER_BLOCK: u32 = 25;
+pub const BLOCK_WEAK_CHANCE: f64 = 0.35; // 35% of blocks spawn pre-damaged
+
+// Debris (block destruction fragments)
+pub const DEBRIS_COUNT: usize = 8;
+pub const DEBRIS_MIN_SIZE: f32 = 4.0;
+pub const DEBRIS_MAX_SIZE: f32 = 12.0;
+pub const DEBRIS_MIN_SPEED: f32 = 80.0;
+pub const DEBRIS_MAX_SPEED: f32 = 220.0;
+pub const DEBRIS_GRAVITY: f32 = -500.0;
+pub const DEBRIS_MAX_SPIN: f32 = 12.0; // radians/sec
+pub const DEBRIS_LIFETIME_MIN: f32 = 0.6;
+pub const DEBRIS_LIFETIME_MAX: f32 = 1.2;
+
+// Enemy death effects
+pub const ENEMY_DEATH_PARTICLE_COUNT: usize = 12;
+pub const SCORE_POPUP_RISE_SPEED: f32 = 80.0;
+pub const SCORE_POPUP_DURATION: f32 = 0.8;
+
+// Knockback
+pub const KNOCKBACK_FORCE: f32 = 200.0;
+pub const KNOCKBACK_LIFT: f32 = 150.0;
+pub const KNOCKBACK_DURATION: f32 = 0.25;
+
+// Hit freeze
+pub const STOMP_FREEZE_DURATION: f32 = 0.05;
+pub const STOMP_FREEZE_SCALE: f32 = 0.05;
+pub const DAMAGE_FREEZE_DURATION: f32 = 0.08;
+pub const DAMAGE_FREEZE_SCALE: f32 = 0.02;
+
+// Combo system
+pub const MAX_COMBO_POWER: u32 = 4;
+pub const COMBO_DISPLAY_DURATION: f32 = 2.0;
+
+// Powerup duration bars
+pub const POWERUP_BAR_WIDTH: f32 = 120.0;
+pub const POWERUP_BAR_HEIGHT: f32 = 12.0;
+pub const POWERUP_BAR_GAP: f32 = 4.0;
+
+// LDtk chunk integration
+pub const LDTK_CHUNK_CHANCE: f64 = 0.3;
+pub const LDTK_CHUNK_MIN_SPACING: f32 = 800.0;
+pub const LDTK_GRID_SIZE: f32 = 16.0;
+
 // Gamepad
-pub const GAMEPAD_DEADZONE: f32 = 0.2;
+pub const GAMEPAD_DEADZONE: f32 = 0.3;
 pub const STICK_NAV_INITIAL_DELAY: f32 = 0.3;
 pub const STICK_NAV_REPEAT_DELAY: f32 = 0.15;
