@@ -14,7 +14,7 @@ mod hud;
 mod input;
 mod ldtk_chunks;
 mod level;
-mod parallax;
+mod mountain_bg;
 mod particles;
 mod player;
 mod powerups;
@@ -51,7 +51,7 @@ fn main() {
         .add_plugins(health::HealthPlugin)
         .add_plugins(hud::HudPlugin)
         .add_plugins(animation::AnimationPlugin)
-        .add_plugins(parallax::ParallaxPlugin)
+        .add_plugins(mountain_bg::MountainBgPlugin)
         .add_plugins(particles::ParticlesPlugin)
         .add_plugins(enemies::EnemiesPlugin)
         .add_plugins(collectibles::CollectiblesPlugin)

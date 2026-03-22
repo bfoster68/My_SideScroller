@@ -184,8 +184,16 @@ fn saw_animate(time: Res<Time>, mut query: Query<&mut Transform, With<Saw>>) {
 // Lava
 // ---------------------------------------------------------------------------
 
+/// Size used for lava collision detection (taller than the visual to prevent
+/// fast-falling players from skipping through).
+#[derive(Component)]
+pub struct LavaHitbox(pub Vec2);
+
 pub fn spawn_lava(commands: &mut Commands, x: f32, width: f32, image: Handle<Image>) {
     let y = GROUND_Y - (GROUND_HEIGHT / 2.0) + (LAVA_HEIGHT / 2.0) - 5.0;
+
+    // Collision box extends well below the visual so fast falls can't skip it
+    let hitbox_height = LAVA_HEIGHT + 100.0;
 
     commands.spawn((
         Sprite {
@@ -195,6 +203,7 @@ pub fn spawn_lava(commands: &mut Commands, x: f32, width: f32, image: Handle<Ima
         },
         Transform::from_xyz(x, y, LAVA_Z),
         Lava,
+        LavaHitbox(Vec2::new(width, hitbox_height)),
     ));
 }
 
@@ -553,7 +562,7 @@ fn saw_player_collision(
 
 fn lava_player_collision(
     player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
-    lava_query: Query<(&Transform, &Sprite), (With<Lava>, Without<Player>)>,
+    lava_query: Query<(&Transform, &LavaHitbox), (With<Lava>, Without<Player>)>,
     mut damage_events: MessageWriter<DamageEvent>,
 ) {
     let Ok((player_tf, invincible, death)) = player_query.single() else { return };
@@ -562,10 +571,9 @@ fn lava_player_collision(
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
 
-    for (lava_tf, lava_sprite) in &lava_query {
-        let lava_size = lava_sprite.custom_size.unwrap_or(Vec2::new(GROUND_SEGMENT_WIDTH, LAVA_HEIGHT));
-        let lava_half_w = lava_size.x / 2.0;
-        let lava_half_h = lava_size.y / 2.0;
+    for (lava_tf, hitbox) in &lava_query {
+        let lava_half_w = hitbox.0.x / 2.0;
+        let lava_half_h = hitbox.0.y / 2.0;
 
         let overlap_x = (player_half_w + lava_half_w)
             - (player_tf.translation.x - lava_tf.translation.x).abs();

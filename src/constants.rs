@@ -60,10 +60,6 @@ pub const MAX_HEALTH: i32 = 3;
 pub const INVINCIBILITY_DURATION: f32 = 1.5;
 pub const INVINCIBILITY_FLASH_RATE: f32 = 10.0;
 
-// Parallax background
-pub const PARALLAX_FAR_SPEED: f32 = 0.05;
-pub const PARALLAX_MID_SPEED: f32 = 0.15;
-pub const PARALLAX_NEAR_SPEED: f32 = 0.3;
 
 // Particles
 pub const PARTICLE_LIFETIME: f32 = 0.5;
