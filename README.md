@@ -1,6 +1,6 @@
 # My Side-Scroller
 
-A 2D side-scrolling platformer built with [Bevy 0.18](https://bevyengine.org/) (Rust game engine).
+A 2D side-scrolling platformer built with [Bevy 0.18](https://bevyengine.org/) (Rust game engine). Features procedural infinite level generation, hand-designed LDtk level chunks, a GPU compute shader background with day/night cycle, and WASM deployment support.
 
 ## How to Play
 
@@ -15,88 +15,83 @@ A 2D side-scrolling platformer built with [Bevy 0.18](https://bevyengine.org/) (
 | Enter / Space / A Button | Select menu item / Restart after game over |
 | Up/Down Arrows / D-Pad | Navigate menus |
 | Left/Right Arrows / D-Pad | Adjust settings |
-| Backtick (`) | Toggle FPS/entity count debug overlay |
+| ~ (Backtick) | Toggle debug overlay |
+
+### Debug Controls (in-game)
+| Key | Action |
+|-----|--------|
+| 0 | Toggle god mode (invincibility) |
+| 9 | Refill health to max |
 
 ### Objective
 Navigate through procedurally generated platforms, collect coins, stomp enemies, and avoid hazards. Try to rack up the highest score before losing all your health!
 
 ## Features
 
-### Sprint 1 — Foundation
-- **Modular plugin architecture** — 19 separate modules
-- **Game state machine** — Menu, Playing, Paused, Settings, and Game Over screens with transitions
-- **Double jump** — Two jumps before needing to land
-- **Variable jump height** — Tap Space for a short hop, hold for a full jump
-- **Coyote time** — Brief grace period to jump after walking off a platform edge
-- **Invincibility frames** — Flashing sprite after taking damage (1.5s protection)
-- **HUD** — Displays health (red), score (white), and coins (gold)
-- **Overlay screens** — Title screen, pause overlay, and game over screen
+### Core Gameplay
+- **Procedural infinite generation** — platforms, enemies, hazards, and collectibles spawn ahead of the player and despawn behind
+- **Hand-designed LDtk chunks** — level editor integration stitches authored sections into the procedural stream
+- **Difficulty scaling** — enemy frequency, hazard density, platform gaps, shooter fire rate, and projectile speed all scale with score
+- **Double jump** with variable height — tap for short hop, hold for full jump
+- **Coyote time** — brief grace period to jump after walking off a platform edge
+- **Combo system** — consecutive stomps and block destructions multiply score (up to 16x)
+- **Coin value scaling** — coins worth more at higher difficulty (10pts at easy, 50pts at hard)
 
-### Sprint 2 — Visuals & Audio
-- **Animated player sprite** — Sprite sheet animations for idle (6 frames), run (6 frames), jump (7 frames), and fall states
-- **Sprite flipping** — Character faces the direction of movement
-- **Styled platforms** — Colored platforms with top highlights, bottom shadows, and edge shading
-- **3-layer parallax background** — Stars/sky (far), hills (mid), foliage (near) scrolling at different speeds
-- **Audio infrastructure** — Sound effect system ready for .ogg files (jump, land, collect, hit, music)
+### Enemies
+- **Walking enemies** — patrol back and forth on platforms, stompable from above
+- **Flying enemies** — hover on sine waves above platforms, stompable
+- **Shooter enemies** — fire projectiles toward the player (range-gated, fire rate scales with difficulty)
+- **Charging enemies** — detect the player and rush toward them after a wind-up
+- **Flying ranged enemies** — aerial enemies that fire downward projectiles
 
-### Sprint 3 — Enemies, Hazards & Collectibles
-- **Enemies** — Red rectangles that patrol back and forth on platforms
-  - Stomp from above to kill (+100 score, player bounces up)
-  - Side/bottom contact deals 1 damage
-- **Coins** — Gold squares that bob up and down and spin
-  - Floating above platforms and mid-air between platforms
-  - Collect on touch (+1 coin, +10 score)
-- **Spikes** — Dark red hazards sitting on platforms
-  - Contact deals 1 damage (respects invincibility)
-- **Level population** — Procedural placement: 25% enemies, 15% spikes, 35% coins, 25% bare platforms
+### Hazards
+- **Spikes** — static damage zones on platforms
+- **Spinning saws** — patrol platforms, always damage (no stomp)
+- **Lava pools** — fill ground gaps, instant kill on contact
+- **Falling boulders** — drop from above with warning indicators
+- **Timed traps** — spike traps that activate on a cycle with visual warnings
 
-### Sprint 4 — Level Design & Progression
-- **Difficulty scaling** — Enemy chance, spike chance, ground gaps, and platform gaps scale with score
-- **Moving platforms** — Platforms that oscillate vertically; occupants (enemies, spikes, coins) ride along as children
-- **Ground gaps** — Procedural gaps in the ground that increase with difficulty
+### Collectibles & Power-ups
+- **Coins** — bob and spin above platforms, 5 formation patterns (arc, line, stack, diagonal, diamond)
+- **Speed Boost** (blue) — +50% movement speed for 5 seconds
+- **Triple Jump** (green) — 3 jumps instead of 2 for 8 seconds
+- **Shield** (gold) — absorbs one hit of damage
 
-### Sprint 5 — Menus & UX
-- **High score persistence** — Saves and displays best score across sessions
-- **Screen transitions** — Fade-in/fade-out between game states
-- **Smart respawn** — Instant respawn on safe platforms (avoids hazards), grants invincibility
-- **Coin formations** — 5 Sonic-style patterns (arc, line, stack, diagonal, diamond) between platforms
+### Breakable Platforms
+- **Destructible blocks** — rows of blocks that take damage from stomps
+- **Run wear** — blocks gradually degrade and change color as the player runs across them
+- **Combo chain** — block destruction contributes to the score combo multiplier
 
-### Sprint 6 — Polish
-- **Particle effects** — Jump dust, landing dust, and running dust trails
-- **Screen shake** — Camera trauma on damage with quadratic falloff
-- **Death animation** — Faint sprite sheet plays before Game Over transition with fade-out
-- **Flying enemies** — Purple enemies that oscillate on sine waves above platforms (stompable)
-- **Shooter enemies** — Green enemies that fire homing projectiles at the player
-- **Moving saws** — Spinning grey hazards that patrol platforms (always damages, no stomp)
-- **Lava pools** — Orange-red pulsing hazards in ground gaps (instant kill)
-- **Power-ups** — Random pickups that bob above platforms:
-  - Speed Boost (blue) — +50% movement speed for 5 seconds
-  - Triple Jump (green) — 3 jumps instead of 2 for 8 seconds
-  - Shield (gold) — Absorbs one hit of damage
+### Visual Effects
+- **GPU compute shader background** — WGSL shader renders parallax rolling hills with:
+  - Day/night cycle (120s): midnight, dawn, noon, dusk transitions
+  - Terrain detail: snow caps, rock outcrops, water in valleys, wildflowers
+  - Atmospheric effects: drifting clouds, fog wisps, shooting stars, god rays
+  - Fireflies (night only), tree silhouettes with wind sway
+- **Sprite art** — player, enemies, collectibles, and hazards use PNG sprites with atlas animations
+- **Particle effects** — jump dust, landing dust, running dust, debris explosions
+- **Screen shake** — camera trauma on damage with quadratic falloff
+- **Death animation** — faint sprite sheet plays before Game Over with fade-out
+- **Invincibility flash** — player flickers during post-damage protection
 
-### Sprint 7 — Art & Audio
-- **Sprite art** — Player, enemy, collectible, and hazard sprites from itch.io asset packs
-- **Sound effects** — .ogg files for jump, land, coin collect, damage, enemy stomp, and power-ups
-- **Background music** — Looping chiptune track during gameplay
+### Audio
+- **Sound effects** — jump, land, coin collect, damage, death, enemy stomp, projectile fire, power-up pickup
+- **Background music** — looping chiptune track during gameplay
+- **Volume controls** — master, SFX, and music sliders in settings
 
-### Sprint 8 — Advanced Features
-- **Main menu** — Title screen with New Game, Continue, Settings, and Quit options
-- **Settings screen** — Master/SFX/Music volume sliders with visual bars
-- **Checkpoints** — Flag markers that save progress mid-run
-- **Level sections** — Distinct themed sections with banner transitions (Forest, Cave, Sky, Ruins)
-- **Charging enemies** — Bull-like enemies that rush toward the player on sight
-- **Flying ranged enemies** — Aerial enemies that fire projectiles from above
-- **Falling boulders** — Rocks that drop from above in cave sections
-- **Timed traps** — Spike traps that activate on a cycle
+### Progression
+- **Score-based difficulty** — 0% to 100% scaling based on score (caps at 5000)
+- **Level sections** — themed color shifts with banner transitions (every 1000 points)
+- **Checkpoints** — flag markers that save mid-run progress
+- **High score persistence** — saves best score across sessions
+- **Game over resets** — checkpoint data cleared on death, new games always start fresh
 
-### Sprint 9 — Technical Improvements
-- **Save/Load system** — JSON persistence for settings, high scores, and checkpoint data with automatic migration from legacy format
-- **Continue from checkpoint** — Resume from last checkpoint via the main menu
-- **Screen resolution options** — Cycle between 1280x720, 1920x1080, and 2560x1440 in settings
-- **Fullscreen toggle** — Switch between windowed and borderless fullscreen
-- **Gamepad/controller support** — Full keyboard + gamepad input via unified abstraction layer with analog stick support and D-pad menu navigation
-- **Debug overlay** — Toggle FPS and entity count display with backtick key
-- **Particle cap** — Maximum 200 simultaneous particles to maintain performance
+### Technical
+- **Save/Load system** — JSON persistence for settings, high scores, and checkpoint data
+- **WASM deployment** — builds for itch.io with canvas targeting and localStorage saves
+- **Gamepad support** — full keyboard + controller input via unified abstraction layer
+- **Screen resolution options** — 1280x720, 1920x1080, 2560x1440 with fullscreen toggle
+- **Debug overlay** — FPS, entity counts, player state, HP, powerups, combo, difficulty, generation frontier
 
 ## Project Structure
 
@@ -108,26 +103,31 @@ src/
   player.rs        — Player components, input, physics, AABB collision
   input.rs         — Unified keyboard + gamepad input abstraction
   animation.rs     — Sprite sheet animation system (idle, run, jump, fall, death)
-  camera.rs        — Smooth camera follow with lerp + screen shake
-  level.rs         — Procedural platform generation with entity spawning
+  camera.rs        — Smooth camera follow with lerp + screen shake + hit freeze
+  level.rs         — Procedural platform generation with difficulty scaling
+  mountain_bg.rs   — GPU compute shader background plugin
+  ldtk_chunks.rs   — LDtk level editor chunk parsing and spawning
   health.rs        — Health, damage messages, invincibility, death animation
   hud.rs           — In-game HUD, menus, and overlay screens
-  parallax.rs      — Multi-layer parallax background
-  enemies.rs       — Walking, flying, charging, and ranged enemies with AI
-  collectibles.rs  — Coin bobbing, spinning, and collection
+  enemies.rs       — All enemy types with AI, shooting, charging, and combos
+  collectibles.rs  — Coin bobbing, spinning, collection, and value scaling
   hazards.rs       — Spikes, saws, lava, boulders, and timed traps
+  breakable.rs     — Destructible block platforms with run wear
   powerups.rs      — Speed boost, triple jump, and shield pickups
   audio.rs         — Sound effect loading, playback, and game settings
   particles.rs     — Particle effects (jump dust, landing dust, running dust)
-  highscore.rs     — High score tracking and new record detection
-  checkpoint.rs    — Checkpoint flags and progress saving
-  save.rs          — JSON save/load system with legacy migration
+  highscore.rs     — High score tracking and checkpoint clear on game over
+  checkpoint.rs    — Checkpoint flags, section transitions, and sky color
+  save.rs          — JSON save/load system (native + WASM localStorage)
+  sprites.rs       — Sprite and atlas asset loading
   transition.rs    — Screen fade transitions
-  debug.rs         — FPS/entity count debug overlay
+  debug.rs         — Debug overlay, god mode, and cheat controls
 
 assets/
-  sprites/         — PNG sprite sheets (player, enemies, hazards, collectibles)
-  sounds/          — .ogg sound effects and background music
+  shaders/         — WGSL compute shader for mountain background
+  sprites/         — PNG sprites (player, enemies, hazards, collectibles, HUD)
+  audio/           — .ogg sound effects and background music
+  levels/          — LDtk project file with hand-designed level chunks
 ```
 
 ## Building & Running
@@ -138,12 +138,21 @@ Requires [Rust](https://rustup.rs/) (edition 2021).
 cargo run
 ```
 
+### WASM Build (for itch.io)
+
+```bash
+trunk build --release --public-url ./
+```
+
 ## Tech Stack
 
-- **Engine**: Bevy 0.18
+- **Engine**: Bevy 0.18 (ECS architecture)
 - **Language**: Rust (edition 2021)
+- **Background**: WGSL compute shader via wgpu
+- **Level Design**: LDtk (JSON-parsed, no heavy crate dependency)
 - **Rendering**: Sprite-based 2D with texture atlas animations
 - **Physics**: Custom AABB collision (separated horizontal/vertical passes)
 - **Audio**: Bevy AudioPlayer with .ogg format
-- **Persistence**: serde/serde_json for save data
+- **Persistence**: serde/serde_json (native file + WASM localStorage)
 - **Input**: Keyboard + gamepad via unified GameInput abstraction
+- **WASM**: trunk build with web-sys for browser storage
