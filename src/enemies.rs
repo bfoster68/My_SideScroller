@@ -4,6 +4,7 @@ use crate::audio::AudioHandles;
 use crate::camera::HitFreeze;
 use crate::constants::*;
 use crate::health::{DamageEvent, Invincible};
+use crate::level::Difficulty;
 use crate::particles::spawn_burst;
 use crate::player::{Grounded, Player, PlayerMovementSet, Score, Velocity};
 use crate::sprites::GameSprites;
@@ -243,17 +244,20 @@ pub fn spawn_shooter_enemy(
         Enemy,
         ShooterEnemy,
         ShootTimer {
-            timer: Timer::from_seconds(SHOOTER_FIRE_INTERVAL, TimerMode::Repeating),
+            timer: Timer::from_seconds(SHOOTER_FIRE_INTERVAL_MAX, TimerMode::Repeating),
         },
     ));
 }
 
 /// Shooter fires projectiles toward the player at intervals.
+/// Fire rate and projectile speed scale with difficulty. Only fires when
+/// the player is within SHOOTER_RANGE.
 fn shooter_fire(
     mut commands: Commands,
     time: Res<Time>,
     mut query: Query<(&GlobalTransform, &mut ShootTimer), (With<ShooterEnemy>, Without<FlyingRangedEnemy>)>,
     player_query: Query<&Transform, With<Player>>,
+    difficulty: Res<Difficulty>,
     game_sprites: Res<GameSprites>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
@@ -261,16 +265,32 @@ fn shooter_fire(
         return;
     };
 
+    let d = difficulty.value;
+    // Fire interval decreases (faster) with difficulty
+    let fire_interval = SHOOTER_FIRE_INTERVAL_MAX
+        + (SHOOTER_FIRE_INTERVAL_MIN - SHOOTER_FIRE_INTERVAL_MAX) * d;
+    // Projectile speed increases with difficulty
+    let proj_speed = PROJECTILE_SPEED_MIN
+        + (PROJECTILE_SPEED_MAX - PROJECTILE_SPEED_MIN) * d;
+
     for (shooter_gtf, mut shoot_timer) in &mut query {
+        // Dynamically adjust fire rate based on current difficulty
+        shoot_timer.timer.set_duration(std::time::Duration::from_secs_f32(fire_interval));
         shoot_timer.timer.tick(time.delta());
 
         if shoot_timer.timer.just_finished() {
             let shooter_pos = shooter_gtf.translation();
-            let dir = Vec2::new(
+
+            // Only fire when player is within range
+            let to_player = Vec2::new(
                 player_tf.translation.x - shooter_pos.x,
                 player_tf.translation.y - shooter_pos.y,
-            )
-            .normalize_or_zero();
+            );
+            if to_player.length() > SHOOTER_RANGE {
+                continue;
+            }
+
+            let dir = to_player.normalize_or_zero();
 
             commands.spawn((
                 Sprite {
@@ -280,7 +300,7 @@ fn shooter_fire(
                 },
                 Transform::from_xyz(shooter_pos.x, shooter_pos.y, PROJECTILE_Z),
                 Projectile {
-                    velocity: dir * PROJECTILE_SPEED,
+                    velocity: dir * proj_speed,
                     lifetime: Timer::from_seconds(PROJECTILE_LIFETIME, TimerMode::Once),
                 },
             ));
@@ -453,7 +473,7 @@ fn flying_ranged_fire(
             let pos = gtf.translation();
             // Fire slightly toward the player but mostly downward
             let dx = (player_tf.translation.x - pos.x).clamp(-50.0, 50.0);
-            let dir = Vec2::new(dx, -1.0 * FLYING_RANGED_PROJ_SPEED).normalize();
+            let dir = Vec2::new(dx, -1.0).normalize();
 
             commands.spawn((
                 Sprite {

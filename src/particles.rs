@@ -140,10 +140,9 @@ pub fn spawn_burst(
     color: Color,
     upward_bias: bool,
 ) {
-    // Note: particle cap is checked by callers or naturally limited by short lifetimes.
-    // The MAX_PARTICLES constant exists for reference but burst spawns are small enough
-    // that they won't exceed it under normal gameplay.
     let mut rng = rand::thread_rng();
+    // Cap count to avoid runaway spawning in intense action
+    let count = count.min(MAX_PARTICLES / 4);
 
     for _ in 0..count {
         let angle = if upward_bias {

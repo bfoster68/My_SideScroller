@@ -184,16 +184,21 @@ fn saw_animate(time: Res<Time>, mut query: Query<&mut Transform, With<Saw>>) {
 // Lava
 // ---------------------------------------------------------------------------
 
-/// Size used for lava collision detection (taller than the visual to prevent
-/// fast-falling players from skipping through).
+/// Collision detection box for lava (taller than the visual to prevent
+/// fast-falling players from skipping through). Extends downward only.
 #[derive(Component)]
-pub struct LavaHitbox(pub Vec2);
+pub struct LavaHitbox {
+    pub size: Vec2,
+    /// How far below the sprite center the hitbox center sits.
+    pub y_offset: f32,
+}
 
 pub fn spawn_lava(commands: &mut Commands, x: f32, width: f32, image: Handle<Image>) {
     let y = GROUND_Y - (GROUND_HEIGHT / 2.0) + (LAVA_HEIGHT / 2.0) - 5.0;
 
-    // Collision box extends well below the visual so fast falls can't skip it
-    let hitbox_height = LAVA_HEIGHT + 100.0;
+    // Extra height extends only downward so players aren't killed above the lava
+    let extra_below = 80.0;
+    let hitbox_height = LAVA_HEIGHT + extra_below;
 
     commands.spawn((
         Sprite {
@@ -203,7 +208,10 @@ pub fn spawn_lava(commands: &mut Commands, x: f32, width: f32, image: Handle<Ima
         },
         Transform::from_xyz(x, y, LAVA_Z),
         Lava,
-        LavaHitbox(Vec2::new(width, hitbox_height)),
+        LavaHitbox {
+            size: Vec2::new(width, hitbox_height),
+            y_offset: extra_below / 2.0, // shift center downward
+        },
     ));
 }
 
@@ -572,13 +580,15 @@ fn lava_player_collision(
     let player_half_h = PLAYER_HEIGHT / 2.0;
 
     for (lava_tf, hitbox) in &lava_query {
-        let lava_half_w = hitbox.0.x / 2.0;
-        let lava_half_h = hitbox.0.y / 2.0;
+        let lava_half_w = hitbox.size.x / 2.0;
+        let lava_half_h = hitbox.size.y / 2.0;
+        // Hitbox center is shifted downward from sprite center
+        let hitbox_center_y = lava_tf.translation.y - hitbox.y_offset;
 
         let overlap_x = (player_half_w + lava_half_w)
             - (player_tf.translation.x - lava_tf.translation.x).abs();
         let overlap_y = (player_half_h + lava_half_h)
-            - (player_tf.translation.y - lava_tf.translation.y).abs();
+            - (player_tf.translation.y - hitbox_center_y).abs();
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
             damage_events.write(DamageEvent { amount: LAVA_DAMAGE, source_pos: Some(Vec2::new(lava_tf.translation.x, lava_tf.translation.y)) });

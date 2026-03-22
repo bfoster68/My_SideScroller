@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::audio::AudioHandles;
 use crate::constants::*;
+use crate::level::Difficulty;
 use crate::player::{Coins, Player, PlayerMovementSet, Score};
 use crate::state::GameState;
 
@@ -97,6 +98,7 @@ fn coin_player_collision(
     coin_query: Query<(Entity, &GlobalTransform), With<Coin>>,
     mut coins: ResMut<Coins>,
     mut score: ResMut<Score>,
+    difficulty: Res<Difficulty>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
     let Ok(player_tf) = player_query.single() else {
@@ -117,7 +119,9 @@ fn coin_player_collision(
         if overlap_x > 0.0 && overlap_y > 0.0 {
             commands.entity(entity).despawn();
             coins.count += 1;
-            score.value += COIN_SCORE;
+            // Coins scale in value with difficulty: 10 at d=0, up to 50 at d=1
+            let coin_value = COIN_SCORE + (difficulty.value * 40.0) as u32;
+            score.value += coin_value;
 
             // Play collect SFX
             if let Some(ref handles) = audio_handles {

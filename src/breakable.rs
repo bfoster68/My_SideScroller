@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use rand::Rng;
 
 use crate::constants::*;
+use crate::enemies::ComboTracker;
 use crate::level::{Platform, PlatformSize};
 use crate::particles::spawn_burst;
 use crate::player::{Grounded, Player, PlayerMovementSet, Score, Velocity};
@@ -197,6 +198,7 @@ fn block_stomp_damage(
         Without<Player>,
     >,
     mut score: ResMut<Score>,
+    mut combo: ResMut<ComboTracker>,
     mut prev_grounded: Local<bool>,
 ) {
     let Ok((player_tf, velocity, grounded)) = player_query.single() else {
@@ -211,7 +213,9 @@ fn block_stomp_damage(
         return;
     }
 
-    // Only damage if player was falling (moving downward)
+    // Only damage if player was falling (not jumping upward).
+    // At landing frame velocity is already zeroed by apply_velocity,
+    // so we just check it's not positive (which would mean upward movement).
     if velocity.0.y > 10.0 {
         return;
     }
@@ -256,7 +260,11 @@ fn block_stomp_damage(
                 death_color,
                 true,
             );
-            score.value += BREAKABLE_SCORE_PER_BLOCK;
+            // Block destruction contributes to combo chain
+            let multiplier = 2u32.pow(combo.count.min(MAX_COMBO_POWER));
+            score.value += BREAKABLE_SCORE_PER_BLOCK * multiplier;
+            combo.count += 1;
+            combo.display_timer = Timer::from_seconds(COMBO_DISPLAY_DURATION, TimerMode::Once);
             commands.entity(entity).despawn();
         } else {
             // Damage: small dust burst + color change

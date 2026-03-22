@@ -105,11 +105,27 @@ impl Plugin for GameAudioPlugin {
     }
 }
 
-/// Attempt to load audio files from assets/audio/. Silently continues if files
-/// are missing — the game works fine without audio assets.
+/// Attempt to load audio files from assets/audio/. Logs warnings for any
+/// missing files — the game works fine without audio assets.
 fn load_audio_assets(asset_server: Res<AssetServer>, mut handles: ResMut<AudioHandles>) {
-    // These will silently fail to load if the files don't exist.
-    // The play_* systems check for Some before playing.
+    let files: &[(&str, &str)] = &[
+        ("audio/jump.ogg", "jump"),
+        ("audio/land.ogg", "land"),
+        ("audio/collect.ogg", "collect"),
+        ("audio/hit.ogg", "hit"),
+        ("audio/powerup.ogg", "powerup"),
+        ("audio/death.ogg", "death"),
+        ("audio/shoot.ogg", "shoot"),
+        ("audio/music.ogg", "music"),
+    ];
+
+    for (path, name) in files {
+        let full_path = format!("assets/{}", path);
+        if !std::path::Path::new(&full_path).exists() {
+            warn!("Audio file missing: {} ({})", path, name);
+        }
+    }
+
     handles.jump = Some(asset_server.load("audio/jump.ogg"));
     handles.land = Some(asset_server.load("audio/land.ogg"));
     handles.collect = Some(asset_server.load("audio/collect.ogg"));
