@@ -15,6 +15,9 @@ pub struct BreakableBlock {
     pub max_health: i32,
     #[allow(dead_code)]
     pub group_id: u32, // reserved for future falling-block physics
+    /// Accumulated wear from the player running across. When this reaches
+    /// 1.0 it converts to 1 point of actual damage and resets.
+    pub wear: f32,
 }
 
 /// A debris fragment spawned when a block is destroyed.
@@ -39,6 +42,8 @@ impl Plugin for BreakablePlugin {
                 Update,
                 (
                     block_stomp_damage
+                        .after(PlayerMovementSet),
+                    block_run_wear
                         .after(PlayerMovementSet),
                     update_debris,
                 )
@@ -86,6 +91,7 @@ pub fn spawn_breakable_platform(
                 health,
                 max_health: BLOCK_MAX_HEALTH,
                 group_id,
+                wear: 0.0,
             },
         ));
     }
@@ -187,6 +193,99 @@ fn update_debris(
             commands.entity(entity).despawn();
         }
     }
+}
+
+/// Gradually wear down breakable blocks while the player runs across them.
+/// Slower than stomping — the color shifts to warn the player before breaking.
+fn block_run_wear(
+    mut commands: Commands,
+    time: Res<Time>,
+    player_query: Query<(&Transform, &Velocity, &Grounded), With<Player>>,
+    mut block_query: Query<
+        (Entity, &Transform, &PlatformSize, &mut BreakableBlock, &mut Sprite),
+        Without<Player>,
+    >,
+    mut score: ResMut<Score>,
+) {
+    let Ok((player_tf, velocity, grounded)) = player_query.single() else {
+        return;
+    };
+
+    // Only wear blocks while grounded and moving horizontally
+    if !grounded.on_ground || velocity.0.x.abs() < 30.0 {
+        return;
+    }
+
+    let player_x = player_tf.translation.x;
+    let player_y = player_tf.translation.y;
+    let player_half_w = PLAYER_WIDTH / 2.0;
+    let player_half_h = PLAYER_HEIGHT / 2.0;
+    let dt = time.delta_secs();
+
+    for (entity, block_tf, block_size, mut block, mut sprite) in &mut block_query {
+        let block_x = block_tf.translation.x;
+        let block_y = block_tf.translation.y;
+        let block_half_w = block_size.0.x / 2.0;
+        let block_half_h = block_size.0.y / 2.0;
+
+        // Check player is standing on this block
+        let overlap_x = (player_half_w + block_half_w) - (player_x - block_x).abs();
+        if overlap_x <= 0.0 {
+            continue;
+        }
+        // Player feet must be near block top
+        let player_bottom = player_y - player_half_h;
+        let block_top = block_y + block_half_h;
+        if (player_bottom - block_top).abs() > 2.0 || player_y <= block_y {
+            continue;
+        }
+
+        // Accumulate wear — speed scales it slightly
+        let speed_factor = (velocity.0.x.abs() / PLAYER_SPEED).min(1.5);
+        block.wear += BLOCK_WEAR_RATE * speed_factor * dt;
+
+        // Convert accumulated wear into damage
+        if block.wear >= 1.0 {
+            block.wear -= 1.0;
+            block.health -= 1;
+
+            if block.health <= 0 {
+                let death_color = block_color_for_health(1, block.max_health);
+                spawn_debris(&mut commands, Vec2::new(block_x, block_y), death_color);
+                spawn_burst(
+                    &mut commands,
+                    Vec2::new(block_x, block_y),
+                    BLOCK_PARTICLE_COUNT / 2, // smaller burst than stomp
+                    death_color,
+                    true,
+                );
+                score.value += BREAKABLE_SCORE_PER_BLOCK;
+                commands.entity(entity).despawn();
+            } else {
+                let new_color = block_color_for_health(block.health, block.max_health);
+                sprite.color = new_color;
+            }
+        } else {
+            // Interpolate color between current health and next damage level
+            // to show gradual visual degradation
+            let base_color = block_color_for_health(block.health, block.max_health);
+            let next_color = block_color_for_health(block.health - 1, block.max_health);
+            let t = block.wear;
+            let blended = blend_colors(base_color, next_color, t);
+            sprite.color = blended;
+        }
+    }
+}
+
+/// Blend two colors by factor t (0.0 = a, 1.0 = b).
+fn blend_colors(a: Color, b: Color, t: f32) -> Color {
+    let a = a.to_srgba();
+    let b = b.to_srgba();
+    Color::srgb(
+        a.red + (b.red - a.red) * t,
+        a.green + (b.green - a.green) * t,
+        a.blue + (b.blue - a.blue) * t,
+    )
 }
 
 /// Detect when player lands on breakable blocks and apply damage.

@@ -35,14 +35,18 @@ fn check_and_save_high_score(
     score: Res<Score>,
     mut high_score: ResMut<HighScore>,
     settings: Res<GameSettings>,
-    checkpoint: Res<CheckpointData>,
+    mut checkpoint: ResMut<CheckpointData>,
 ) {
     if score.value > high_score.value {
         high_score.value = score.value;
         commands.insert_resource(NewHighScoreFlag);
     }
 
-    // Always save on game over (persists high score + checkpoint + settings)
+    // Game over = run ended. Clear checkpoint so "Continue" isn't offered
+    // for a finished run — the player should start fresh.
+    *checkpoint = CheckpointData::default();
+
+    // Save high score + settings (checkpoint is now cleared)
     crate::save::save_to_disk(&settings, &high_score, &checkpoint);
     info!("Game data saved (high score: {})", high_score.value);
 }

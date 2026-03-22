@@ -199,6 +199,7 @@ pub const BLOCK_WIDTH: f32 = 32.0;
 pub const BLOCK_HEIGHT: f32 = 20.0; // matches PLATFORM_HEIGHT
 pub const BLOCK_MAX_HEALTH: i32 = 3;
 pub const BLOCK_DAMAGE_PER_STOMP: i32 = 1;
+pub const BLOCK_WEAR_RATE: f32 = 0.4; // wear points per second while running on block
 pub const BLOCK_PARTICLE_COUNT: usize = 6;
 pub const BLOCK_HIT_PARTICLE_COUNT: usize = 3;
 pub const BREAKABLE_MIN_CHANCE: f64 = 0.10;  // 10% at difficulty 0
