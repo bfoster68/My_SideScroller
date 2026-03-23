@@ -1,0 +1,85 @@
+MY SIDE-SCROLLER — Tester Build
+================================
+
+GETTING STARTED
+---------------
+macOS: Double-click "my_sidescroller" to launch.
+       If macOS blocks it, right-click > Open > Open anyway.
+
+The "assets" folder MUST stay next to the game executable.
+
+
+CONTROLS
+--------
+Movement:    A / D  or  Left / Right arrow keys
+Jump:        Space (press again mid-air for double jump)
+             Tap for short hop, hold for full jump
+Pause:       Escape
+Menu:        Up/Down arrows to navigate, Enter/Space to select
+
+
+OBJECTIVE
+---------
+Run as far as you can! Jump across platforms, collect coins, stomp
+enemies from above, and avoid hazards. Your score increases as you
+progress, and the game gets harder the further you go.
+
+
+ENEMIES
+-------
+- Walking (red): patrol platforms — stomp from above to kill
+- Flying (purple): hover in the air — stompable
+- Shooter (green): fire projectiles — stomp or dodge
+- Charging (orange): rush at you after a wind-up — jump over them
+- Flying ranged: aerial enemies that shoot downward
+
+
+HAZARDS
+-------
+- Spikes: static damage on platforms
+- Spinning saws: patrol platforms, always hurt (can't stomp)
+- Lava: fills ground gaps, instant kill
+- Falling boulders: watch for warning markers above
+- Timed traps: flash before reactivating
+
+
+POWER-UPS
+---------
+- Blue (Speed Boost): +50% speed for 5 seconds
+- Green (Triple Jump): 3 jumps instead of 2 for 8 seconds
+- Gold (Shield): absorbs one hit
+
+
+SAVE SYSTEM
+-----------
+The game auto-saves at checkpoints. You can also manually save:
+
+  Pause > Save Game > choose a slot or create a new one
+
+To load a save:
+
+  Main Menu > Load Game > select a save
+
+To delete a save:
+
+  Load Game screen > highlight a save > press Backspace > Enter to confirm
+
+
+TIPS
+----
+- Chain stomps without landing for combo multipliers (up to 16x score!)
+- Breakable blocks degrade as you run across them
+- Coins are worth more at higher difficulty
+- Power-ups spawn more often as difficulty increases
+- Every 1000 points you enter a new section
+
+
+KNOWN ISSUES / FEEDBACK
+------------------------
+This is a test build. Please note any issues you encounter:
+- Platforms that seem unreachable
+- Unfair enemy placement
+- Performance drops
+- Anything that feels wrong or could be improved
+
+Send feedback to the developer. Thanks for testing!
