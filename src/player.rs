@@ -284,7 +284,7 @@ fn apply_velocity(
 
         // Use a small epsilon so the player stays grounded when sitting
         // exactly on top of a platform (overlap_y == 0.0 after snap).
-        if overlap_x > 0.0 && overlap_y >= -0.5 {
+        if overlap_x > 0.0 && overlap_y >= -1.5 {
             if overlap_y <= 0.0 && transform.translation.y > plat_tf.translation.y {
                 // Resting exactly on top — just mark grounded, no position correction.
                 grounded.on_ground = true;
@@ -292,12 +292,14 @@ fn apply_velocity(
                     riding_delta_y = pv.0.y;
                 }
             } else if overlap_y > 0.0 && transform.translation.y > plat_tf.translation.y {
-                // Landing on top — snap already places player at platform's
-                // current position, so no riding delta needed here.
+                // Landing on top — snap to surface and carry platform velocity
                 transform.translation.y =
                     plat_tf.translation.y + plat_half_h + player_half_h;
                 velocity.0.y = 0.0;
                 grounded.on_ground = true;
+                if let Some(pv) = plat_vel {
+                    riding_delta_y = pv.0.y;
+                }
             } else if overlap_y > 0.0 {
                 // Bonking head on bottom
                 transform.translation.y =
@@ -377,41 +379,43 @@ fn respawn_on_fall(
 
         // Find the nearest safe platform, preferring platforms AHEAD of the
         // player so they don't get stuck in a backward-respawn loop.
+        // Single-pass: track best safe and best overall (fallback).
         let player_x = transform.translation.x;
-        let mut candidates: Vec<(f32, f32, f32)> = Vec::new(); // (score, x, top_y)
+        let danger_x = PLAYER_WIDTH / 2.0 + ENEMY_WIDTH / 2.0 + 20.0;
+        let danger_y = PLAYER_HEIGHT / 2.0 + ENEMY_HEIGHT / 2.0;
+
+        // Collect hazard positions once (small vec, only nearby hazards)
+        let hazards: Vec<Vec2> = enemy_query.iter()
+            .map(|t| t.translation().truncate())
+            .chain(spike_query.iter().map(|t| t.translation().truncate()))
+            .chain(saw_query.iter().map(|t| t.translation().truncate()))
+            .filter(|h| (h.x - player_x).abs() < GENERATE_AHEAD)
+            .collect();
+
+        let mut best_safe: Option<(f32, f32, f32)> = None; // (score, x, top_y)
+        let mut best_any: Option<(f32, f32, f32)> = None;
+
         for (plat_tf, plat_size) in &platform_query {
             let px = plat_tf.translation.x;
             let top_y = plat_tf.translation.y + plat_size.0.y / 2.0;
             let raw_dist = (px - player_x).abs();
             let score = if px >= player_x - 100.0 { raw_dist } else { raw_dist + 5000.0 };
-            candidates.push((score, px, top_y));
-        }
-        candidates.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
-        let danger_radius = PLAYER_WIDTH + ENEMY_WIDTH;
-        let mut best_platform: Option<(f32, f32)> = None;
-        for (_dist, plat_x, top_y) in &candidates {
-            // Check hazards via iterators (no Vec allocation)
-            let is_safe = !enemy_query.iter()
-                .map(|t| t.translation().truncate())
-                .chain(spike_query.iter().map(|t| t.translation().truncate()))
-                .chain(saw_query.iter().map(|t| t.translation().truncate()))
-                .any(|h| {
-                    (h.x - plat_x).abs() < danger_radius
-                        && (h.y - top_y).abs() < ENEMY_HEIGHT + SPIKE_HEIGHT
+            if best_any.is_none() || score < best_any.unwrap().0 {
+                best_any = Some((score, px, top_y));
+            }
+
+            if best_safe.is_none() || score < best_safe.unwrap().0 {
+                let is_safe = !hazards.iter().any(|h| {
+                    (h.x - px).abs() < danger_x && (h.y - top_y).abs() < danger_y
                 });
-            if is_safe {
-                best_platform = Some((*plat_x, *top_y));
-                break;
+                if is_safe {
+                    best_safe = Some((score, px, top_y));
+                }
             }
         }
 
-        // If no safe platform, fall back to the closest one anyway
-        if best_platform.is_none() {
-            if let Some((_dist, plat_x, top_y)) = candidates.first() {
-                best_platform = Some((*plat_x, *top_y));
-            }
-        }
+        let best_platform = best_safe.or(best_any).map(|(_, x, y)| (x, y));
 
         if let Some((plat_x, top_y)) = best_platform {
             transform.translation.x = plat_x;

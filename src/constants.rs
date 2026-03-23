@@ -167,6 +167,15 @@ pub const CHARGING_RECOVERY: f32 = 0.5;
 pub const CHARGING_ENEMY_WIDTH: f32 = 44.0;
 pub const CHARGING_ENEMY_HEIGHT: f32 = 48.0;
 
+// Enemy type spawn weights and thresholds
+pub const CHARGING_START_DIFFICULTY: f32 = 0.3;
+pub const FLYING_RANGED_START_DIFFICULTY: f32 = 0.5;
+pub const CHARGING_SPAWN_WEIGHT: f64 = 0.15;
+pub const FLYING_RANGED_SPAWN_WEIGHT: f64 = 0.15;
+pub const ENEMY_WALKING_WEIGHT: f64 = 0.72;
+pub const ENEMY_FLYING_WEIGHT: f64 = 0.18;
+pub const ENEMY_SHOOTER_WEIGHT: f64 = 0.10;
+
 // Flying ranged enemy
 pub const FLYING_RANGED_FIRE_INTERVAL: f32 = 2.5;
 pub const FLYING_RANGED_PROJ_SPEED: f32 = 180.0;

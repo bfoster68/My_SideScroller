@@ -400,18 +400,12 @@ fn charging_enemy_behavior(
                 tf.translation.x += charger.charge_direction * CHARGING_ENEMY_SPEED * dt;
                 sprite.flip_x = charger.charge_direction < 0.0;
 
-                // Stop at platform edges
-                if tf.translation.x >= patrol.right_bound {
-                    tf.translation.x = patrol.right_bound;
-                    charger.state = ChargeState::Recovering;
-                    charger.state_timer = Timer::from_seconds(CHARGING_RECOVERY, TimerMode::Once);
-                } else if tf.translation.x <= patrol.left_bound {
-                    tf.translation.x = patrol.left_bound;
-                    charger.state = ChargeState::Recovering;
-                    charger.state_timer = Timer::from_seconds(CHARGING_RECOVERY, TimerMode::Once);
-                }
-
-                if charger.state_timer.is_finished() {
+                // Stop at platform edges or when charge duration expires
+                if tf.translation.x >= patrol.right_bound
+                    || tf.translation.x <= patrol.left_bound
+                    || charger.state_timer.is_finished()
+                {
+                    tf.translation.x = tf.translation.x.clamp(patrol.left_bound, patrol.right_bound);
                     charger.state = ChargeState::Recovering;
                     charger.state_timer = Timer::from_seconds(CHARGING_RECOVERY, TimerMode::Once);
                 }
@@ -640,12 +634,31 @@ fn update_score_popups(
 
 /// Reset combo when player touches the ground.
 fn reset_combo_on_land(
+    mut commands: Commands,
     mut combo: ResMut<ComboTracker>,
-    player_query: Query<&Grounded, With<Player>>,
+    player_query: Query<(&Transform, &Grounded), With<Player>>,
     time: Res<Time>,
 ) {
-    if let Ok(grounded) = player_query.single() {
-        if grounded.on_ground {
+    if let Ok((tf, grounded)) = player_query.single() {
+        if grounded.on_ground && combo.count >= 2 {
+            // Visual feedback: flash "COMBO x{N}" in red before resetting
+            let combo_power = combo.count.min(MAX_COMBO_POWER);
+            let multiplier = 1u32 << combo_power;
+            commands.spawn((
+                Text2d::new(format!("x{} COMBO", multiplier)),
+                TextFont { font_size: 18.0, ..default() },
+                TextColor(Color::srgb(1.0, 0.4, 0.2)),
+                Transform::from_xyz(
+                    tf.translation.x,
+                    tf.translation.y + PLAYER_HEIGHT / 2.0 + 10.0,
+                    10.0,
+                ),
+                ScorePopup {
+                    timer: Timer::from_seconds(SCORE_POPUP_DURATION, TimerMode::Once),
+                },
+            ));
+            combo.count = 0;
+        } else if grounded.on_ground {
             combo.count = 0;
         }
     }

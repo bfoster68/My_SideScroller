@@ -244,7 +244,7 @@ fn block_run_wear(
         // Convert accumulated wear into damage
         if block.wear >= 1.0 {
             block.wear -= 1.0;
-            block.health -= 1;
+            block.health = (block.health - 1).max(0);
 
             if block.health <= 0 {
                 let death_color = block_color_for_health(1, block.max_health);

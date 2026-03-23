@@ -192,7 +192,7 @@ pub struct LavaHitbox {
 }
 
 pub fn spawn_lava(commands: &mut Commands, x: f32, width: f32, image: Handle<Image>) {
-    let y = GROUND_Y - (GROUND_HEIGHT / 2.0) + (LAVA_HEIGHT / 2.0) - 5.0;
+    let y = GROUND_Y - (GROUND_HEIGHT / 2.0) + (LAVA_HEIGHT / 2.0);
 
     // Extra height extends only downward so players aren't killed above the lava
     let extra_below = 80.0;

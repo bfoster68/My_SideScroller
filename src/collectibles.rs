@@ -121,7 +121,7 @@ fn coin_player_collision(
             coins.count += 1;
             // Coins scale in value with difficulty: 10 at d=0, up to 50 at d=1
             let coin_value = COIN_SCORE + (difficulty.value * 40.0) as u32;
-            score.value += coin_value;
+            score.value = score.value.saturating_add(coin_value);
 
             // Play collect SFX
             if let Some(ref handles) = audio_handles {
