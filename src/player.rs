@@ -76,7 +76,7 @@ impl Plugin for PlayerPlugin {
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(OnEnter(GameState::GameOver), reset_player_on_game_over)
-            .add_systems(OnEnter(GameState::Playing), reset_score_on_play.in_set(PlayResetSet));
+            .add_systems(OnEnter(GameState::Playing), (restore_player_visibility, reset_score_on_play).chain().in_set(PlayResetSet));
     }
 }
 
@@ -464,7 +464,15 @@ fn reset_player_on_game_over(
         .remove::<SpeedBoost>()
         .remove::<TripleJump>()
         .remove::<Shield>();
-    sprite.color = sprite.color.with_alpha(1.0);
+    // Keep player hidden during GameOver — restored in reset_score_on_play
+    sprite.color = sprite.color.with_alpha(0.0);
+}
+
+/// Restore player sprite visibility when entering Playing (hidden during GameOver).
+fn restore_player_visibility(mut query: Query<&mut Sprite, With<Player>>) {
+    if let Ok(mut sprite) = query.single_mut() {
+        sprite.color = sprite.color.with_alpha(1.0);
+    }
 }
 
 /// Reset score, coins, and player position when starting a new game.

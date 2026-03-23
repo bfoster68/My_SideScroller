@@ -50,6 +50,7 @@ pub struct PlayerDeathEvent;
 #[derive(Component)]
 pub struct DeathTimer {
     pub timer: Timer,
+    pub shattered: bool,
 }
 
 pub struct HealthPlugin;
@@ -60,7 +61,7 @@ impl Plugin for HealthPlugin {
             .add_message::<PlayerDeathEvent>()
             .add_systems(
                 Update,
-                (apply_damage, tick_knockback, tick_death_animation, tick_invincibility, flash_invincible)
+                (apply_damage, tick_knockback, tick_death_animation, update_death_fragments, tick_invincibility, flash_invincible)
                     .chain()
                     .run_if(in_state(GameState::Playing)),
             );
@@ -130,6 +131,7 @@ fn apply_damage(
             commands.entity(entity).insert((
                 DeathTimer {
                     timer: Timer::from_seconds(DEATH_ANIM_DURATION, TimerMode::Once),
+                    shattered: false,
                 },
                 PlayerAnimState::Death,
             ));
@@ -169,26 +171,117 @@ fn tick_knockback(
 }
 
 /// Tick the death timer, fade the player out, then transition to GameOver.
+/// A fragment of the player sprite that flies outward on death.
+#[derive(Component)]
+struct DeathFragment {
+    velocity: Vec2,
+    angular_velocity: f32,
+    lifetime: Timer,
+}
+
 fn tick_death_animation(
     mut commands: Commands,
     time: Res<Time>,
-    mut query: Query<(Entity, &mut DeathTimer, &mut Sprite), With<Player>>,
+    mut query: Query<(Entity, &mut DeathTimer, &mut Transform, &mut Sprite), With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
-    let Ok((entity, mut death, mut sprite)) = query.single_mut() else {
+    let Ok((entity, mut death, mut transform, mut sprite)) = query.single_mut() else {
         return;
     };
 
     death.timer.tick(time.delta());
 
-    // Fade out over the death duration
-    let alpha = death.timer.fraction_remaining();
-    sprite.color = sprite.color.with_alpha(alpha);
+    if !death.shattered {
+        // First frame: hide player and spawn shatter fragments
+        death.shattered = true;
+        sprite.color = sprite.color.with_alpha(0.0);
+
+        let pos = transform.translation.truncate();
+        spawn_death_fragments(&mut commands, pos);
+    }
 
     if death.timer.is_finished() {
         commands.entity(entity).remove::<DeathTimer>();
-        sprite.color = sprite.color.with_alpha(1.0);
+        // Keep player hidden — sprite alpha restored in reset_player_on_game_over
         next_state.set(GameState::GameOver);
+    }
+}
+
+fn spawn_death_fragments(commands: &mut Commands, pos: Vec2) {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+
+    // Player body colors for fragments
+    let colors = [
+        Color::srgb(0.9, 0.75, 0.6),  // skin tone
+        Color::srgb(0.3, 0.5, 0.8),   // blue clothing
+        Color::srgb(0.2, 0.4, 0.7),   // darker blue
+        Color::srgb(0.8, 0.3, 0.3),   // red accent
+        Color::srgb(0.95, 0.85, 0.7), // light skin
+        Color::srgb(0.4, 0.3, 0.2),   // hair/dark
+    ];
+
+    let fragment_count = 16;
+    for i in 0..fragment_count {
+        let w = rng.gen_range(6.0..16.0);
+        let h = rng.gen_range(6.0..14.0);
+
+        // Spread starting position across the player area
+        let offset_x = rng.gen_range(-PLAYER_WIDTH / 2.0..PLAYER_WIDTH / 2.0);
+        let offset_y = rng.gen_range(-PLAYER_HEIGHT / 2.0..PLAYER_HEIGHT / 2.0);
+
+        // Explode outward from center
+        let angle = (i as f32 / fragment_count as f32) * std::f32::consts::TAU
+            + rng.gen_range(-0.3..0.3);
+        let speed = rng.gen_range(120.0..320.0);
+        let vx = angle.cos() * speed;
+        let vy = angle.sin() * speed + rng.gen_range(50.0..150.0); // bias upward
+
+        let color = colors[rng.gen_range(0..colors.len())];
+        let lifetime = rng.gen_range(0.5..1.0);
+
+        commands.spawn((
+            Sprite::from_color(color, Vec2::new(w, h)),
+            Transform::from_xyz(pos.x + offset_x, pos.y + offset_y, 5.0),
+            DeathFragment {
+                velocity: Vec2::new(vx, vy),
+                angular_velocity: rng.gen_range(-15.0..15.0),
+                lifetime: Timer::from_seconds(lifetime, TimerMode::Once),
+            },
+        ));
+    }
+}
+
+fn update_death_fragments(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut Transform, &mut DeathFragment, &mut Sprite)>,
+) {
+    let dt = time.delta_secs();
+    for (entity, mut tf, mut frag, mut sprite) in &mut query {
+        frag.lifetime.tick(time.delta());
+
+        // Gravity
+        frag.velocity.y += GRAVITY * 0.6 * dt;
+
+        // Move
+        tf.translation.x += frag.velocity.x * dt;
+        tf.translation.y += frag.velocity.y * dt;
+
+        // Spin
+        tf.rotation = Quat::from_rotation_z(
+            tf.rotation.to_euler(EulerRot::ZYX).0 + frag.angular_velocity * dt,
+        );
+
+        // Fade + shrink
+        let remaining = frag.lifetime.fraction_remaining();
+        sprite.color = sprite.color.with_alpha(remaining);
+        let scale = 0.3 + 0.7 * remaining;
+        tf.scale = Vec3::splat(scale);
+
+        if frag.lifetime.is_finished() {
+            commands.entity(entity).despawn();
+        }
     }
 }
 
