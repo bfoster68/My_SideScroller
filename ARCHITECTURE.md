@@ -27,21 +27,23 @@ A 2D side-scrolling platformer built with **Bevy 0.18** (Rust). The game feature
 
 ```
    MainMenu
-      |
-      v
-   Playing <---> Paused
-      |             |
-      v             v
-   GameOver     Settings
-      |
-      v
-   MainMenu
+      |  \
+      v   v
+   Playing  SaveMenu (Load)
+      |  \
+      v   v
+   Paused  GameOver
+     |  \       |
+     v   v      v
+  Settings SaveMenu (Save)  MainMenu
 ```
 
-- `GameState` enum: `MainMenu`, `Playing`, `Paused`, `GameOver`, `Settings`
+- `GameState` enum: `Menu`, `Playing`, `Paused`, `GameOver`, `Settings`, `SaveMenu`
+- `SaveMenuMode` resource: `Load` or `Save` — determines save menu behavior
 - `PreviousGameState` resource tracks the prior state to distinguish pause/unpause from fresh game start
 - `OnEnter(Playing)` systems have guards to skip level reset when returning from Paused/Settings
 - `ScreenTransition` resource manages fade-in/fade-out between states
+- `CheckpointResetSet` system set ensures checkpoint data resets before level generation
 
 ---
 
@@ -136,9 +138,12 @@ A 2D side-scrolling platformer built with **Bevy 0.18** (Rust). The game feature
 | `ComboTracker` | enemies.rs | Stomp combo count + display timer |
 | `ScreenShake` | camera.rs | Trauma value for shake |
 | `HitFreeze` | camera.rs | Virtual time slowdown for impacts |
-| `GameSettings` | save.rs | Volume, resolution, fullscreen |
+| `GameSettings` | audio.rs | Volume, resolution, fullscreen |
 | `HighScore` | highscore.rs | Persistent best score |
 | `CheckpointData` | checkpoint.rs | Section, score, position at last checkpoint |
+| `ActiveSlot` | save.rs | Currently played save slot ID |
+| `SaveMenuMode` | state.rs | Load or Save mode for save menu |
+| `SaveMenuSelection` | state.rs | Selected slot index + delete confirmation |
 | `AudioHandles` | audio.rs | Loaded audio asset handles |
 | `GameSprites` | sprites.rs | All sprite/atlas handles |
 | `SpriteSheets` | animation.rs | Player animation atlas data |
@@ -176,7 +181,7 @@ A 2D side-scrolling platformer built with **Bevy 0.18** (Rust). The game feature
 | `PlatformSize(Vec2)` | Collision dimensions |
 | `MovingPlatform { base_y, speed, range }` | Oscillation data |
 | `PlatformVelocity(Vec2)` | Per-frame delta for carrying player |
-| `BreakableBlock { health, max_health, group_id, wear }` | Destructible (wear degrades while running) |
+| `BreakableBlock { health, max_health, wear }` | Destructible (wear degrades while running) |
 
 ### Enemies
 | Component | Purpose |
@@ -241,7 +246,10 @@ Where `DIFFICULTY_SCORE_MAX = 5000`.
 - Shooter fire rate (2.5s→1.2s), projectile speed (160→280px/s), range-gated (600px)
 - Charging enemy detect range (220px), wind-up time (0.45s)
 - Coin value (10pts at d=0 → 50pts at d=1)
+- Powerup spawn chance (5%→12%)
 - LDtk chunk selection (filtered by difficulty range)
+
+**Platform reachability:** Max upward rise scales from 100% of `MAX_JUMP_HEIGHT` at small gaps to 60% at large gaps. Every 8th platform forced near ground level as a safety net.
 
 ---
 
@@ -271,12 +279,21 @@ Hand-designed level chunks parsed from `assets/levels/chunks.ldtk`:
 
 ## Save System (save.rs)
 
-- Native: JSON file at OS data directory
-- WASM: localStorage via web-sys
-- Saves: `GameSettings` (volume, resolution, fullscreen) + `HighScore`
-- Auto-saves settings on change, high score on game over
-- Checkpoint data cleared on game over (no "Continue" after death)
-- "Continue" only available from menu if checkpoint was saved mid-run
+**Unlimited save slots** with separate global settings:
+
+- `SettingsData` — volumes, resolution, fullscreen, high score (`settings.json` / `settings` localStorage key)
+- `SlotData` — score, checkpoint position, section, timestamp (per-slot files)
+- `SlotIndex` — quick metadata for menu display without loading every slot
+
+**Storage layout:**
+- Native: `settings.json` + `saves/index.json` + `saves/slot_{id}.json`
+- WASM: `my_sidescroller_settings` + `my_sidescroller_slots` + `my_sidescroller_slot_{id}` localStorage keys
+
+**API:** `list_slots()`, `load_slot(id)`, `save_slot(id, data)`, `delete_slot(id)`, `create_slot(data)`, `update_slot(id, data)`
+
+**Auto-save:** At each checkpoint, saves to `ActiveSlot`. If no slot exists yet, creates one automatically.
+
+**Migration:** Legacy `save.json` format auto-migrated to `settings.json` + slot 0 on first load.
 
 ---
 
@@ -296,13 +313,13 @@ Hand-designed level chunks parsed from `assets/levels/chunks.ldtk`:
 src/
   main.rs          (67 lines)   - App setup, plugin registration
   constants.rs     (256 lines)  - All tuning values
-  state.rs         (295 lines)  - GameState, menus, pause, transitions
+  state.rs         (400 lines)  - GameState, menus, pause, save menu, transitions
   input.rs         (185 lines)  - Keyboard/gamepad -> GameInput
   player.rs        (535 lines)  - Movement, physics, collision, respawn
   level.rs         (742 lines)  - Procedural generation, difficulty
   enemies.rs       (697 lines)  - All enemy types, AI, combat
   hazards.rs       (598 lines)  - Spikes, saws, lava, boulders, traps
-  hud.rs           (625 lines)  - Score, health, powerup bars, banners
+  hud.rs           (760 lines)  - Score, health, powerup bars, banners, save menu
   camera.rs        (152 lines)  - Follow, shake, hit freeze
   animation.rs     (255 lines)  - Sprite sheet cycling
   mountain_bg.rs   (287 lines)  - GPU compute shader plugin
@@ -314,7 +331,7 @@ src/
   breakable.rs     (381 lines)  - Destructible blocks + run wear
   checkpoint.rs    (265 lines)  - Sections, banners, colors
   health.rs        (217 lines)  - Damage, death, invincibility
-  save.rs          (145 lines)  - Persistence
+  save.rs          (370 lines)  - Save slot system, settings, migration
   sprites.rs       (52 lines)   - Asset loading
   highscore.rs     (56 lines)   - High score + checkpoint clear on game over
   transition.rs    (97 lines)   - Screen fades
