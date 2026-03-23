@@ -79,7 +79,8 @@ pub struct Difficulty {
     pub value: f32,
 }
 
-/// Timer for periodic debug logging.
+/// Timer for periodic debug logging (debug builds only).
+#[cfg(debug_assertions)]
 #[derive(Resource)]
 struct GenDebugTimer(Timer);
 
@@ -88,21 +89,29 @@ pub struct LevelPlugin;
 impl Plugin for LevelPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ChunkTracker>()
-            .init_resource::<Difficulty>()
-            .insert_resource(GenDebugTimer(Timer::from_seconds(2.0, TimerMode::Repeating)))
-            .add_systems(
+            .init_resource::<Difficulty>();
+
+        #[cfg(debug_assertions)]
+        app.insert_resource(GenDebugTimer(Timer::from_seconds(2.0, TimerMode::Repeating)));
+
+        app.add_systems(
                 Update,
                 (
                     update_difficulty,
                     generate_chunks,
                     despawn_behind_camera,
                     moving_platform_system,
-                    debug_generation,
                 )
                     .chain()
                     .before(PlayerMovementSet)
                     .run_if(in_state(GameState::Playing)),
-            )
+            );
+
+        #[cfg(debug_assertions)]
+        app.add_systems(
+            Update,
+            debug_generation.run_if(in_state(GameState::Playing)),
+        )
             .add_systems(OnEnter(GameState::Playing), reset_level_if_needed
                 .in_set(LevelResetSet)
                 .after(crate::player::PlayResetSet)
@@ -110,6 +119,7 @@ impl Plugin for LevelPlugin {
     }
 }
 
+#[cfg(debug_assertions)]
 fn debug_generation(
     time: Res<Time>,
     mut timer: ResMut<GenDebugTimer>,
@@ -448,12 +458,13 @@ fn generate_chunks(
             let saw_chance = spike_chance * 0.5;
             let spike_remaining = spike_chance - saw_chance;
             // Split enemy budget: walking, flying, shooter, charging, flying_ranged
-            let charging_pct = if d > 0.3 { 0.15 } else { 0.0 };
-            let flying_ranged_pct = if d > 0.5 { 0.15 } else { 0.0 };
+            let charging_pct = if d > CHARGING_START_DIFFICULTY { CHARGING_SPAWN_WEIGHT } else { 0.0 };
+            let flying_ranged_pct = if d > FLYING_RANGED_START_DIFFICULTY { FLYING_RANGED_SPAWN_WEIGHT } else { 0.0 };
             let remaining = 1.0 - charging_pct - flying_ranged_pct;
-            let walking_chance = enemy_chance * (0.72 * remaining / (0.72 + 0.18 + 0.10));
-            let flying_chance = enemy_chance * (0.18 * remaining / (0.72 + 0.18 + 0.10));
-            let shooter_chance = enemy_chance * (0.10 * remaining / (0.72 + 0.18 + 0.10));
+            let base_total = ENEMY_WALKING_WEIGHT + ENEMY_FLYING_WEIGHT + ENEMY_SHOOTER_WEIGHT;
+            let walking_chance = enemy_chance * (ENEMY_WALKING_WEIGHT * remaining / base_total);
+            let flying_chance = enemy_chance * (ENEMY_FLYING_WEIGHT * remaining / base_total);
+            let shooter_chance = enemy_chance * (ENEMY_SHOOTER_WEIGHT * remaining / base_total);
             let charging_chance = enemy_chance * charging_pct;
             let flying_ranged_chance = enemy_chance * flying_ranged_pct;
             if roll < walking_chance && width >= ENEMY_WIDTH * 2.5 {

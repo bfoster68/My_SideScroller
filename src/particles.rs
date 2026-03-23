@@ -96,8 +96,12 @@ fn detect_land_particles(
 fn run_dust_while_running(
     mut commands: Commands,
     query: Query<(&Transform, &Velocity, &Grounded), With<Player>>,
+    particle_count: Query<(), With<Particle>>,
     time: Res<Time>,
 ) {
+    if particle_count.iter().count() >= MAX_PARTICLES {
+        return;
+    }
     let Ok((tf, velocity, grounded)) = query.single() else {
         return;
     };

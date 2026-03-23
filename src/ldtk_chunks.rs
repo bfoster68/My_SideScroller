@@ -54,9 +54,7 @@ struct ChunkEntity {
 enum FieldVal {
     Float(f32),
     Int(i32),
-    #[allow(dead_code)]
     Bool(bool),
-    #[allow(dead_code)]
     Str(String),
 }
 
