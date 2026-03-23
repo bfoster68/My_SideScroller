@@ -82,16 +82,24 @@ Navigate through procedurally generated platforms, collect coins, stomp enemies,
 ### Progression
 - **Score-based difficulty** — 0% to 100% scaling based on score (caps at 5000)
 - **Level sections** — themed color shifts with banner transitions (every 1000 points)
-- **Checkpoints** — flag markers that save mid-run progress
+- **Checkpoints** — flag markers that auto-save progress to the active slot
 - **High score persistence** — saves best score across sessions
-- **Game over resets** — checkpoint data cleared on death, new games always start fresh
+- **Platform reachability** — procedural generation validates jump physics to prevent unreachable platforms
+
+### Save System
+- **Unlimited save slots** — create, load, and delete saves from the menu
+- **Auto-save** — game progress saved to active slot at each checkpoint
+- **Save menu** — accessible from main menu (Load Game) and pause menu (Save Game)
+- **Delete saves** — press Backspace in load screen, with confirmation prompt
+- **Legacy migration** — old single-save format auto-migrated to new slot system
+- **Cross-platform** — native JSON files + WASM localStorage
 
 ### Technical
-- **Save/Load system** — JSON persistence for settings, high scores, and checkpoint data
 - **WASM deployment** — builds for itch.io with canvas targeting and localStorage saves
 - **Gamepad support** — full keyboard + controller input via unified abstraction layer
 - **Screen resolution options** — 1280x720, 1920x1080, 2560x1440 with fullscreen toggle
 - **Debug overlay** — FPS, entity counts, player state, HP, powerups, combo, difficulty, generation frontier
+- **Impact effects** — red particle burst on projectile hit, gold burst on shield break
 
 ## Project Structure
 
@@ -99,7 +107,7 @@ Navigate through procedurally generated platforms, collect coins, stomp enemies,
 src/
   main.rs          — App entry point, plugin registration
   constants.rs     — All tuning values (physics, sizes, speeds, spawn rates)
-  state.rs         — Game state machine (Menu/Playing/Paused/Settings/GameOver)
+  state.rs         — Game state machine (Menu/Playing/Paused/Settings/GameOver/SaveMenu)
   player.rs        — Player components, input, physics, AABB collision
   input.rs         — Unified keyboard + gamepad input abstraction
   animation.rs     — Sprite sheet animation system (idle, run, jump, fall, death)
@@ -118,7 +126,7 @@ src/
   particles.rs     — Particle effects (jump dust, landing dust, running dust)
   highscore.rs     — High score tracking and checkpoint clear on game over
   checkpoint.rs    — Checkpoint flags, section transitions, and sky color
-  save.rs          — JSON save/load system (native + WASM localStorage)
+  save.rs          — Save slot system (unlimited slots, native JSON + WASM localStorage)
   sprites.rs       — Sprite and atlas asset loading
   transition.rs    — Screen fade transitions
   debug.rs         — Debug overlay, god mode, and cheat controls
