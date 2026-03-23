@@ -52,8 +52,6 @@ pub struct TimedTrap {
     pub active: bool,
     pub on_duration: f32,
     pub off_duration: f32,
-    #[allow(dead_code)]
-    pub phase_offset: f32,
 }
 
 pub struct HazardsPlugin;
@@ -404,7 +402,6 @@ pub fn spawn_timed_trap(commands: &mut Commands, x: f32, platform_y: f32, image:
             active: phase < TIMED_TRAP_ON_DURATION,
             on_duration: TIMED_TRAP_ON_DURATION,
             off_duration: TIMED_TRAP_OFF_DURATION,
-            phase_offset: phase,
         },
     ));
 }

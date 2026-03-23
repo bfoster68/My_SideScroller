@@ -50,6 +50,14 @@ struct PauseMenuItem(usize);
 #[derive(Component)]
 struct SettingsOverlay;
 
+/// Marker for save menu overlay.
+#[derive(Component)]
+struct SaveMenuOverlay;
+
+/// Marker for save menu slot items.
+#[derive(Component)]
+struct SaveMenuItem(usize);
+
 /// Marker for settings rows.
 #[derive(Component)]
 struct SettingsItem(usize);
@@ -96,6 +104,10 @@ impl Plugin for HudPlugin {
             .add_systems(OnEnter(GameState::Settings), spawn_settings_overlay)
             .add_systems(OnExit(GameState::Settings), despawn_all::<SettingsOverlay>)
             .add_systems(Update, update_settings_display.run_if(in_state(GameState::Settings)))
+            // Save Menu
+            .add_systems(OnEnter(GameState::SaveMenu), spawn_save_menu_overlay)
+            .add_systems(OnExit(GameState::SaveMenu), despawn_all::<SaveMenuOverlay>)
+            .add_systems(Update, update_save_menu_display.run_if(in_state(GameState::SaveMenu)))
             // Game Over
             .add_systems(OnEnter(GameState::GameOver), spawn_game_over_overlay.after(HighScoreSet))
             .add_systems(OnExit(GameState::GameOver), despawn_all::<GameOverOverlay>);
@@ -309,11 +321,10 @@ fn update_powerup_bars(
 fn spawn_menu_overlay(
     mut commands: Commands,
     high_score: Res<HighScore>,
-    checkpoint: Res<CheckpointData>,
     mut menu_sel: ResMut<MenuSelection>,
 ) {
     menu_sel.index = 0;
-    let has_checkpoint = checkpoint.last_checkpoint_score > 0;
+    let has_saves = !crate::save::list_slots().is_empty();
 
     commands
         .spawn((
@@ -348,12 +359,12 @@ fn spawn_menu_overlay(
             // Spacer
             parent.spawn(Node { height: Val::Px(10.0), ..default() });
 
-            // Menu items — conditionally include Continue
+            // Menu items — conditionally include Load Game
             let mut idx = 0;
-            if has_checkpoint {
+            if has_saves {
                 parent.spawn((
                     MenuItem(idx),
-                    Text::new(format!("Continue (Score: {})", checkpoint.last_checkpoint_score)),
+                    Text::new("Load Game"),
                     TextFont { font_size: 28.0, ..default() },
                     TextColor(COLOR_SELECTED),
                 ));
@@ -420,7 +431,7 @@ fn spawn_pause_overlay(mut commands: Commands) {
 
             parent.spawn(Node { height: Val::Px(10.0), ..default() });
 
-            let items = ["Resume", "Settings", "Quit to Menu"];
+            let items = ["Resume", "Save Game", "Settings", "Quit to Menu", "Quit Game"];
             for (i, label) in items.iter().enumerate() {
                 parent.spawn((
                     PauseMenuItem(i),
@@ -438,6 +449,123 @@ fn update_pause_highlight(
 ) {
     for (item, mut color) in &mut query {
         color.0 = if item.0 == pause_sel.index { COLOR_SELECTED } else { COLOR_UNSELECTED };
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Save Menu Screen
+// ---------------------------------------------------------------------------
+
+fn spawn_save_menu_overlay(
+    mut commands: Commands,
+    mode: Option<Res<crate::state::SaveMenuMode>>,
+) {
+    let mode = mode.map(|m| *m).unwrap_or(crate::state::SaveMenuMode::Load);
+    let title = match mode {
+        crate::state::SaveMenuMode::Load => "LOAD GAME",
+        crate::state::SaveMenuMode::Save => "SAVE GAME",
+    };
+
+    let slots = crate::save::list_slots();
+
+    commands
+        .spawn((
+            SaveMenuOverlay,
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(12.0),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.85)),
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new(title),
+                TextFont { font_size: 40.0, ..default() },
+                TextColor(COLOR_TITLE),
+            ));
+
+            parent.spawn(Node { height: Val::Px(8.0), ..default() });
+
+            if slots.is_empty() && mode == crate::state::SaveMenuMode::Load {
+                parent.spawn((
+                    Text::new("No saves found"),
+                    TextFont { font_size: 22.0, ..default() },
+                    TextColor(Color::srgb(0.5, 0.5, 0.5)),
+                ));
+            }
+
+            for (i, slot) in slots.iter().enumerate() {
+                let label = format!(
+                    "Save {} — Section {} — Score {} — {}",
+                    slot.id + 1,
+                    slot.section + 1,
+                    slot.score,
+                    slot.timestamp
+                );
+                parent.spawn((
+                    SaveMenuItem(i),
+                    Text::new(label),
+                    TextFont { font_size: 22.0, ..default() },
+                    TextColor(if i == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
+                ));
+            }
+
+            // "New Save" option in Save mode
+            if mode == crate::state::SaveMenuMode::Save {
+                let idx = slots.len();
+                parent.spawn((
+                    SaveMenuItem(idx),
+                    Text::new("+ New Save"),
+                    TextFont { font_size: 22.0, ..default() },
+                    TextColor(if idx == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
+                ));
+            }
+
+            parent.spawn(Node { height: Val::Px(8.0), ..default() });
+
+            let hint = match mode {
+                crate::state::SaveMenuMode::Load => "Enter: Load  |  Backspace: Delete  |  ESC: Back",
+                crate::state::SaveMenuMode::Save => "Enter: Save  |  ESC: Back",
+            };
+            parent.spawn((
+                Text::new(hint),
+                TextFont { font_size: 16.0, ..default() },
+                TextColor(Color::srgb(0.4, 0.4, 0.4)),
+            ));
+        });
+}
+
+fn update_save_menu_display(
+    save_sel: Res<crate::state::SaveMenuSelection>,
+    mut query: Query<(&SaveMenuItem, &mut TextColor, &mut Text)>,
+) {
+    let slots = crate::save::list_slots();
+    for (item, mut color, mut text) in &mut query {
+        let is_selected = item.0 == save_sel.index;
+
+        if save_sel.confirm_delete && is_selected && item.0 < slots.len() {
+            // Show delete confirmation in red
+            color.0 = Color::srgb(1.0, 0.3, 0.3);
+            if let Some(slot) = slots.get(item.0) {
+                **text = format!("DELETE Save {}? Press Enter to confirm", slot.id + 1);
+            }
+        } else {
+            color.0 = if is_selected { COLOR_SELECTED } else { COLOR_UNSELECTED };
+            // Restore normal text if not in delete mode
+            if item.0 < slots.len() {
+                if let Some(slot) = slots.get(item.0) {
+                    **text = format!(
+                        "Save {} — Section {} — Score {} — {}",
+                        slot.id + 1, slot.section + 1, slot.score, slot.timestamp
+                    );
+                }
+            }
+        }
     }
 }
 

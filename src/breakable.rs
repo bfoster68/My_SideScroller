@@ -13,8 +13,6 @@ use crate::state::GameState;
 pub struct BreakableBlock {
     pub health: i32,
     pub max_health: i32,
-    #[allow(dead_code)]
-    pub group_id: u32, // reserved for future falling-block physics
     /// Accumulated wear from the player running across. When this reaches
     /// 1.0 it converts to 1 point of actual damage and resets.
     pub wear: f32,
@@ -60,7 +58,7 @@ pub fn spawn_breakable_platform(
     center_x: f32,
     y: f32,
     num_blocks: usize,
-    group_id: u32,
+    _group_id: u32,
 ) -> f32 {
     let total_width = num_blocks as f32 * BLOCK_WIDTH;
     let start_x = center_x - total_width / 2.0 + BLOCK_WIDTH / 2.0;
@@ -90,7 +88,6 @@ pub fn spawn_breakable_platform(
             BreakableBlock {
                 health,
                 max_health: BLOCK_MAX_HEALTH,
-                group_id,
                 wear: 0.0,
             },
         ));

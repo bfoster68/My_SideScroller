@@ -375,14 +375,6 @@ fn respawn_on_fall(
             .map(|c| c.translation.x)
             .unwrap_or(SPAWN_X);
 
-        // Collect all enemy, spike, and saw positions for hazard checking.
-        let hazard_positions: Vec<Vec2> = enemy_query
-            .iter()
-            .map(|t| t.translation().truncate())
-            .chain(spike_query.iter().map(|t| t.translation().truncate()))
-            .chain(saw_query.iter().map(|t| t.translation().truncate()))
-            .collect();
-
         // Find the nearest safe platform, preferring platforms AHEAD of the
         // player so they don't get stuck in a backward-respawn loop.
         let player_x = transform.translation.x;
@@ -391,20 +383,23 @@ fn respawn_on_fall(
             let px = plat_tf.translation.x;
             let top_y = plat_tf.translation.y + plat_size.0.y / 2.0;
             let raw_dist = (px - player_x).abs();
-            // Platforms ahead or near the player are strongly preferred
             let score = if px >= player_x - 100.0 { raw_dist } else { raw_dist + 5000.0 };
             candidates.push((score, px, top_y));
         }
         candidates.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
+        let danger_radius = PLAYER_WIDTH + ENEMY_WIDTH;
         let mut best_platform: Option<(f32, f32)> = None;
         for (_dist, plat_x, top_y) in &candidates {
-            // Check if any hazard is close to this platform surface
-            let danger_radius = PLAYER_WIDTH + ENEMY_WIDTH;
-            let is_safe = !hazard_positions.iter().any(|h| {
-                (h.x - plat_x).abs() < danger_radius
-                    && (h.y - top_y).abs() < ENEMY_HEIGHT + SPIKE_HEIGHT
-            });
+            // Check hazards via iterators (no Vec allocation)
+            let is_safe = !enemy_query.iter()
+                .map(|t| t.translation().truncate())
+                .chain(spike_query.iter().map(|t| t.translation().truncate()))
+                .chain(saw_query.iter().map(|t| t.translation().truncate()))
+                .any(|h| {
+                    (h.x - plat_x).abs() < danger_radius
+                        && (h.y - top_y).abs() < ENEMY_HEIGHT + SPIKE_HEIGHT
+                });
             if is_safe {
                 best_platform = Some((*plat_x, *top_y));
                 break;
@@ -436,6 +431,9 @@ fn respawn_on_fall(
         commands.entity(entity).insert(Invincible {
             timer: Timer::from_seconds(INVINCIBILITY_DURATION, TimerMode::Once),
         });
+
+        // Snap camera to new position
+        commands.insert_resource(crate::camera::NeedsCameraSnap);
     }
 }
 

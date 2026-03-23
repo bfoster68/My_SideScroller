@@ -93,7 +93,7 @@ pub fn spawn_powerup(
         PowerupKind::Shield => shield_img,
     };
 
-    let y = platform_y + (PLATFORM_HEIGHT / 2.0) + COIN_FLOAT_HEIGHT + 10.0;
+    let y = platform_y + (PLATFORM_HEIGHT / 2.0) + COIN_FLOAT_HEIGHT;
 
     commands.spawn((
         Sprite {

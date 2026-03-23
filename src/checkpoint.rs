@@ -87,6 +87,10 @@ pub fn section_sky_color(section: u32) -> Color {
 
 pub struct CheckpointPlugin;
 
+/// System set for checkpoint reset — other OnEnter(Playing) systems can order after this.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CheckpointResetSet;
+
 impl Plugin for CheckpointPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CheckpointData>()
@@ -95,7 +99,7 @@ impl Plugin for CheckpointPlugin {
                 (check_checkpoint, check_section, section_banner_tick, lerp_sky_color)
                     .run_if(in_state(GameState::Playing)),
             )
-            .add_systems(OnEnter(GameState::Playing), reset_checkpoint_data);
+            .add_systems(OnEnter(GameState::Playing), reset_checkpoint_data.in_set(CheckpointResetSet));
     }
 }
 
@@ -142,6 +146,7 @@ fn check_checkpoint(
     audio_handles: Option<Res<crate::audio::AudioHandles>>,
     settings: Res<GameSettings>,
     high_score: Res<HighScore>,
+    mut active_slot: ResMut<crate::save::ActiveSlot>,
 ) {
     if score.value < data.last_checkpoint_score + CHECKPOINT_INTERVAL {
         return;
@@ -168,8 +173,17 @@ fn check_checkpoint(
         }
     }
 
-    // Save checkpoint progress to disk
-    crate::save::save_to_disk(&settings, &high_score, &data);
+    // Auto-save to active slot
+    let slot_data = crate::save::slot_data_from_checkpoint(&data);
+    if let Some(id) = active_slot.0 {
+        crate::save::update_slot(id, &slot_data);
+    } else {
+        // First checkpoint — create a new slot
+        let id = crate::save::create_slot(&slot_data);
+        active_slot.0 = Some(id);
+    }
+    // Also save settings
+    crate::save::save_settings(&settings, &high_score);
 }
 
 /// Check if we've entered a new section.
@@ -184,7 +198,7 @@ fn check_section(
     }
 
     let new_section = score.value / SECTION_INTERVAL;
-    if new_section > data.section && data.section > 0 || (new_section > 0 && data.section == 0 && score.value >= SECTION_INTERVAL) {
+    if (new_section > data.section && data.section > 0) || (new_section > 0 && data.section == 0 && score.value >= SECTION_INTERVAL) {
         data.section = new_section;
 
         // Award bonus score

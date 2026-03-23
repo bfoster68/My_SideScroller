@@ -42,12 +42,11 @@ fn check_and_save_high_score(
         commands.insert_resource(NewHighScoreFlag);
     }
 
-    // Game over = run ended. Clear checkpoint so "Continue" isn't offered
-    // for a finished run — the player should start fresh.
+    // Game over = run ended. Clear checkpoint data.
     *checkpoint = CheckpointData::default();
 
-    // Save high score + settings (checkpoint is now cleared)
-    crate::save::save_to_disk(&settings, &high_score, &checkpoint);
+    // Save settings + high score (don't touch save slots — game over doesn't delete saves)
+    crate::save::save_settings(&settings, &high_score);
     info!("Game data saved (high score: {})", high_score.value);
 }
 

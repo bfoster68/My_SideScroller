@@ -95,7 +95,7 @@ pub const PROJECTILE_SPEED_MAX: f32 = 280.0;
 pub const PROJECTILE_SIZE: f32 = 8.0;
 pub const PROJECTILE_DAMAGE: i32 = 1;
 pub const PROJECTILE_Z: f32 = 0.75;
-pub const PROJECTILE_LIFETIME: f32 = 4.0;
+pub const PROJECTILE_LIFETIME: f32 = 2.0;
 pub const SHOOTER_Z: f32 = 0.8;
 
 // Collectibles
@@ -135,7 +135,8 @@ pub const POWERUP_SIZE: f32 = 24.0;
 pub const POWERUP_BOB_AMPLITUDE: f32 = 5.0;
 pub const POWERUP_BOB_SPEED: f32 = 2.5;
 pub const POWERUP_Z: f32 = 0.65;
-pub const POWERUP_SPAWN_CHANCE: f64 = 0.05;
+pub const POWERUP_SPAWN_CHANCE_MIN: f64 = 0.05;
+pub const POWERUP_SPAWN_CHANCE_MAX: f64 = 0.12;
 pub const SPEED_BOOST_DURATION: f32 = 5.0;
 pub const SPEED_BOOST_MULTIPLIER: f32 = 1.5;
 pub const TRIPLE_JUMP_DURATION: f32 = 8.0;
