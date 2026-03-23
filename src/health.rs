@@ -101,6 +101,14 @@ fn apply_damage(
             s.hits_remaining -= 1;
             if s.hits_remaining <= 0 {
                 commands.entity(entity).remove::<Shield>();
+                // Gold particle burst when shield breaks
+                crate::particles::spawn_burst(
+                    &mut commands,
+                    player_tf.translation.truncate(),
+                    10,
+                    Color::srgb(1.0, 0.85, 0.2),
+                    true,
+                );
             }
             continue;
         }

@@ -31,11 +31,6 @@ impl Default for GameSettings {
 }
 
 impl GameSettings {
-    /// Effective volume for sound effects.
-    #[allow(dead_code)]
-    pub fn effective_sfx_volume(&self) -> f32 {
-        self.master_volume * self.sfx_volume
-    }
     /// Effective volume for background music.
     pub fn effective_music_volume(&self) -> f32 {
         self.master_volume * self.music_volume

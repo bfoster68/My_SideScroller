@@ -679,11 +679,21 @@ fn projectile_player_collision(
             - (player_tf.translation.y - proj_tf.translation.y).abs();
 
         if overlap_x > 0.0 && overlap_y > 0.0 {
+            let impact_pos = Vec2::new(proj_tf.translation.x, proj_tf.translation.y);
             commands.entity(entity).despawn();
             damage_events.write(DamageEvent {
                 amount: PROJECTILE_DAMAGE,
-                source_pos: Some(Vec2::new(proj_tf.translation.x, proj_tf.translation.y)),
+                source_pos: Some(impact_pos),
             });
+
+            // Red particle burst at impact point
+            crate::particles::spawn_burst(
+                &mut commands,
+                impact_pos,
+                6,
+                Color::srgb(1.0, 0.3, 0.3),
+                false,
+            );
 
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.hit {

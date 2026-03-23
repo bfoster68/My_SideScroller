@@ -22,7 +22,7 @@ pub struct HitFreeze {
 
 /// Marker resource: camera needs to snap to player on next frame.
 #[derive(Resource)]
-struct NeedsCameraSnap;
+pub struct NeedsCameraSnap;
 
 pub struct CameraPlugin;
 

@@ -56,6 +56,8 @@ pub struct ChunkTracker {
     pub consecutive_ground_gaps: u32,
     /// X position where the last LDtk chunk was placed (for spacing).
     pub last_ldtk_chunk_x: f32,
+    /// Count of platforms since last ground-reachable one.
+    pub platforms_since_ground_level: u32,
 }
 
 impl Default for ChunkTracker {
@@ -66,6 +68,7 @@ impl Default for ChunkTracker {
             last_platform_y: GROUND_Y + GROUND_HEIGHT / 2.0 + 80.0,
             consecutive_ground_gaps: 0,
             last_ldtk_chunk_x: SPAWN_X - LDTK_CHUNK_MIN_SPACING * 2.0,
+            platforms_since_ground_level: 0,
         }
     }
 }
@@ -102,7 +105,8 @@ impl Plugin for LevelPlugin {
             )
             .add_systems(OnEnter(GameState::Playing), reset_level_if_needed
                 .in_set(LevelResetSet)
-                .after(crate::player::PlayResetSet));
+                .after(crate::player::PlayResetSet)
+                .after(crate::checkpoint::CheckpointResetSet));
     }
 }
 
@@ -282,6 +286,7 @@ fn generate_chunks(
     let bare_chance = (0.25_f64 - 0.10 * d as f64).max(0.10);
     let coin_chance = 1.0 - enemy_chance - spike_chance - bare_chance;
     let moving_chance = MOVING_PLATFORM_CHANCE + 0.15 * d as f64;
+    let powerup_chance = POWERUP_SPAWN_CHANCE_MIN + (POWERUP_SPAWN_CHANCE_MAX - POWERUP_SPAWN_CHANCE_MIN) * d as f64;
 
     let mut color_idx: usize = 0;
 
@@ -326,12 +331,32 @@ fn generate_chunks(
 
         // --- Procedural platform generation (fallback) ---
         let dx = rng.gen_range(min_gap..max_gap);
-        let dy = rng.gen_range(-MAX_JUMP_HEIGHT..MAX_JUMP_HEIGHT);
+
+        // Constrain upward dy: for larger gaps, limit how much the platform can rise.
+        // The player has a double jump, so max reachable height is generous (~130px),
+        // but for very wide gaps the player needs horizontal travel time which reduces
+        // effective rise. Scale max rise from full MAX_JUMP_HEIGHT at min_gap down to
+        // 60% at max_gap.
+        let gap_fraction = ((dx - min_gap) / (max_gap - min_gap + 1.0)).clamp(0.0, 1.0);
+        let max_rise = MAX_JUMP_HEIGHT * (1.0 - 0.4 * gap_fraction);
+
+        let dy = rng.gen_range(-MAX_JUMP_HEIGHT..max_rise);
+
+        // Ground surface Y for reference
+        let ground_surface = GROUND_Y + GROUND_HEIGHT / 2.0;
 
         let new_x = tracker.rightmost_platform_x + dx;
-        let new_y = (tracker.last_platform_y + dy)
-            .max(GROUND_Y + GROUND_HEIGHT / 2.0 + 80.0)
+        let mut new_y = (tracker.last_platform_y + dy)
+            .max(ground_surface + 60.0)
             .min(GROUND_Y + 350.0);
+
+        // Safety: every 8 platforms, force one within jump range of the ground
+        // so the player always has a way back up if they fall.
+        tracker.platforms_since_ground_level += 1;
+        if tracker.platforms_since_ground_level >= 8 {
+            new_y = ground_surface + rng.gen_range(60.0..MAX_JUMP_HEIGHT);
+            tracker.platforms_since_ground_level = 0;
+        }
 
         // Platform width decreases slightly with difficulty
         let min_w = lerp_diff(PLATFORM_MIN_WIDTH, PLATFORM_MIN_WIDTH * 0.7, d);
@@ -396,7 +421,7 @@ fn generate_chunks(
             // Place entities on breakable platforms (coins only — no enemies/hazards)
             let roll: f64 = rng.gen();
             if roll < coin_chance {
-                if rng.gen_bool(POWERUP_SPAWN_CHANCE) {
+                if rng.gen_bool(powerup_chance) {
                     spawn_powerup(
                         &mut commands, new_x, new_y,
                         game_sprites.powerup_speed.clone(),
@@ -452,7 +477,7 @@ fn generate_chunks(
                 }
             } else if roll < enemy_chance + spike_chance + coin_chance {
                 // Small chance to spawn a power-up instead of a coin
-                if rng.gen_bool(POWERUP_SPAWN_CHANCE) {
+                if rng.gen_bool(powerup_chance) {
                     spawn_powerup(
                         &mut commands, new_x, new_y,
                         game_sprites.powerup_speed.clone(),

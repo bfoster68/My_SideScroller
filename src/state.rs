@@ -15,6 +15,21 @@ pub enum GameState {
     Playing,
     Paused,
     GameOver,
+    SaveMenu,
+}
+
+/// What the save menu is being used for.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveMenuMode {
+    Load,
+    Save,
+}
+
+/// Tracks which slot is selected in the save menu.
+#[derive(Resource, Default)]
+pub struct SaveMenuSelection {
+    pub index: usize,
+    pub confirm_delete: bool,
 }
 
 /// Tracks where the Settings screen was opened from so "Back" returns correctly.
@@ -61,6 +76,7 @@ impl Plugin for StatePlugin {
             .init_resource::<PauseSelection>()
             .init_resource::<SettingsSelection>()
             .init_resource::<PreviousGameState>()
+            .init_resource::<SaveMenuSelection>()
             .insert_resource(ApplyWindowSettings)
             .add_systems(Update, (apply_saved_window_settings, apply_deferred_recenter, track_previous_state, handle_state_input).chain());
     }
@@ -126,11 +142,13 @@ fn handle_state_input(
     mut menu_sel: ResMut<MenuSelection>,
     mut pause_sel: ResMut<PauseSelection>,
     mut settings_sel: ResMut<SettingsSelection>,
+    mut save_menu_sel: ResMut<SaveMenuSelection>,
     mut settings_return: ResMut<SettingsReturnState>,
     mut settings: ResMut<crate::audio::GameSettings>,
     checkpoint: Res<CheckpointData>,
     mut window_query: Query<&mut Window>,
     high_score: Res<crate::highscore::HighScore>,
+    save_menu_mode: Option<Res<SaveMenuMode>>,
 ) {
     // Don't process input while a transition is active
     if transition.is_some() {
@@ -139,8 +157,8 @@ fn handle_state_input(
 
     match current_state.get() {
         GameState::Menu => {
-            let has_checkpoint = checkpoint.last_checkpoint_score > 0;
-            let count = if has_checkpoint { 4 } else { 3 }; // Continue/Play/Settings/Quit or Play/Settings/Quit
+            let has_saves = !crate::save::list_slots().is_empty();
+            let count = if has_saves { 4 } else { 3 }; // Load/New/Settings/Quit or New/Settings/Quit
             if game_input.up_pressed {
                 menu_sel.index = if menu_sel.index == 0 { count - 1 } else { menu_sel.index - 1 };
             }
@@ -148,19 +166,24 @@ fn handle_state_input(
                 menu_sel.index = (menu_sel.index + 1) % count;
             }
             if game_input.confirm_pressed {
-                // Map selection index to action based on whether Continue is shown
-                let action = if has_checkpoint {
-                    menu_sel.index // 0=Continue, 1=New Game, 2=Settings, 3=Quit
+                let action = if has_saves {
+                    menu_sel.index // 0=Load, 1=New Game, 2=Settings, 3=Quit
                 } else {
                     menu_sel.index + 1 // offset: 1=New Game, 2=Settings, 3=Quit
                 };
                 match action {
                     0 => {
-                        // Continue from checkpoint
-                        commands.insert_resource(ResumeFromCheckpoint);
+                        // Open save menu in Load mode
+                        commands.insert_resource(SaveMenuMode::Load);
+                        save_menu_sel.index = 0;
+                        save_menu_sel.confirm_delete = false;
+                        next_state.set(GameState::SaveMenu);
+                    }
+                    1 => {
+                        // New Game — create a fresh active slot
+                        commands.insert_resource(crate::save::ActiveSlot(None));
                         start_transition(&mut commands, GameState::Playing);
                     }
-                    1 => start_transition(&mut commands, GameState::Playing),
                     2 => {
                         settings_return.0 = Some(GameState::Menu);
                         settings_sel.index = 0;
@@ -181,7 +204,7 @@ fn handle_state_input(
             }
         }
         GameState::Paused => {
-            let count = 3; // Resume, Settings, Quit to Menu
+            let count = 5; // Resume, Save Game, Settings, Quit to Menu, Quit Game
             if game_input.pause_pressed {
                 next_state.set(GameState::Playing);
             }
@@ -195,12 +218,23 @@ fn handle_state_input(
                 match pause_sel.index {
                     0 => next_state.set(GameState::Playing),
                     1 => {
+                        // Save Game
+                        commands.insert_resource(SaveMenuMode::Save);
+                        save_menu_sel.index = 0;
+                        save_menu_sel.confirm_delete = false;
+                        next_state.set(GameState::SaveMenu);
+                    }
+                    2 => {
                         settings_return.0 = Some(GameState::Paused);
                         settings_sel.index = 0;
                         next_state.set(GameState::Settings);
                     }
-                    2 => {
+                    3 => {
                         start_transition(&mut commands, GameState::Menu);
+                    }
+                    4 => {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        std::process::exit(0);
                     }
                     _ => {}
                 }
@@ -277,12 +311,108 @@ fn handle_state_input(
                 || (game_input.confirm_pressed && settings_sel.index == back_index)
             {
                 // Save settings when leaving
-                crate::save::save_to_disk(&settings, &high_score, &checkpoint);
+                crate::save::save_settings(&settings, &high_score);
 
                 if let Some(return_state) = settings_return.0 {
                     next_state.set(return_state);
                 } else {
                     next_state.set(GameState::Menu);
+                }
+            }
+        }
+        GameState::SaveMenu => {
+            let slots = crate::save::list_slots();
+            let mode = save_menu_mode.as_deref().copied().unwrap_or(SaveMenuMode::Load);
+            // In Save mode, add one extra entry for "New Save"
+            let count = if mode == SaveMenuMode::Save { slots.len() + 1 } else { slots.len() }.max(1);
+
+            if keyboard.just_pressed(KeyCode::Escape) {
+                if save_menu_sel.confirm_delete {
+                    save_menu_sel.confirm_delete = false;
+                } else {
+                    // Return to where we came from
+                    commands.remove_resource::<SaveMenuMode>();
+                    match mode {
+                        SaveMenuMode::Load => next_state.set(GameState::Menu),
+                        SaveMenuMode::Save => next_state.set(GameState::Paused),
+                    }
+                }
+            }
+
+            if game_input.up_pressed && !save_menu_sel.confirm_delete {
+                save_menu_sel.index = if save_menu_sel.index == 0 { count - 1 } else { save_menu_sel.index - 1 };
+            }
+            if game_input.down_pressed && !save_menu_sel.confirm_delete {
+                save_menu_sel.index = (save_menu_sel.index + 1) % count;
+            }
+
+            // Delete key in Load mode
+            if mode == SaveMenuMode::Load
+                && keyboard.just_pressed(KeyCode::Delete)
+                && save_menu_sel.index < slots.len()
+            {
+                save_menu_sel.confirm_delete = true;
+            }
+            // Also support Backspace for delete on Mac
+            if mode == SaveMenuMode::Load
+                && keyboard.just_pressed(KeyCode::Backspace)
+                && save_menu_sel.index < slots.len()
+            {
+                save_menu_sel.confirm_delete = true;
+            }
+
+            if game_input.confirm_pressed {
+                if save_menu_sel.confirm_delete {
+                    // Confirm delete
+                    if let Some(slot) = slots.get(save_menu_sel.index) {
+                        crate::save::delete_slot(slot.id);
+                        save_menu_sel.confirm_delete = false;
+                        // Clamp index
+                        let new_slots = crate::save::list_slots();
+                        if save_menu_sel.index >= new_slots.len() && !new_slots.is_empty() {
+                            save_menu_sel.index = new_slots.len() - 1;
+                        } else if new_slots.is_empty() {
+                            // No more slots — return to menu
+                            commands.remove_resource::<SaveMenuMode>();
+                            next_state.set(GameState::Menu);
+                        }
+                    }
+                } else {
+                    match mode {
+                        SaveMenuMode::Load => {
+                            if let Some(slot_entry) = slots.get(save_menu_sel.index) {
+                                if let Some(data) = crate::save::load_slot(slot_entry.id) {
+                                    // Load slot into checkpoint data
+                                    commands.insert_resource(CheckpointData {
+                                        last_checkpoint_score: data.score,
+                                        checkpoint_x: data.checkpoint_x,
+                                        checkpoint_y: data.checkpoint_y,
+                                        section: data.section,
+                                        initialized: false,
+                                    });
+                                    commands.insert_resource(crate::save::ActiveSlot(Some(slot_entry.id)));
+                                    commands.insert_resource(ResumeFromCheckpoint);
+                                    commands.remove_resource::<SaveMenuMode>();
+                                    start_transition(&mut commands, GameState::Playing);
+                                }
+                            }
+                        }
+                        SaveMenuMode::Save => {
+                            let slot_data = crate::save::slot_data_from_checkpoint(&checkpoint);
+                            if save_menu_sel.index < slots.len() {
+                                // Overwrite existing slot
+                                let id = slots[save_menu_sel.index].id;
+                                crate::save::update_slot(id, &slot_data);
+                                commands.insert_resource(crate::save::ActiveSlot(Some(id)));
+                            } else {
+                                // New save
+                                let id = crate::save::create_slot(&slot_data);
+                                commands.insert_resource(crate::save::ActiveSlot(Some(id)));
+                            }
+                            commands.remove_resource::<SaveMenuMode>();
+                            next_state.set(GameState::Paused);
+                        }
+                    }
                 }
             }
         }
