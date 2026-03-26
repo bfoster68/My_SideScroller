@@ -111,8 +111,9 @@ impl Plugin for LevelPlugin {
         app.add_systems(
             Update,
             debug_generation.run_if(in_state(GameState::Playing)),
-        )
-            .add_systems(OnEnter(GameState::Playing), reset_level_if_needed
+        );
+
+        app.add_systems(OnEnter(GameState::Playing), reset_level_if_needed
                 .in_set(LevelResetSet)
                 .after(crate::player::PlayResetSet)
                 .after(crate::checkpoint::CheckpointResetSet));
@@ -294,7 +295,7 @@ fn generate_chunks(
     let spike_chance = lerp_diff_f64(MIN_SPIKE_CHANCE, MAX_SPIKE_CHANCE, d);
     // Coin chance fills remaining probability (minus bare platform %)
     let bare_chance = (0.25_f64 - 0.10 * d as f64).max(0.10);
-    let coin_chance = 1.0 - enemy_chance - spike_chance - bare_chance;
+    let coin_chance = (1.0 - enemy_chance - spike_chance - bare_chance).max(0.0);
     let moving_chance = MOVING_PLATFORM_CHANCE + 0.15 * d as f64;
     let powerup_chance = POWERUP_SPAWN_CHANCE_MIN + (POWERUP_SPAWN_CHANCE_MAX - POWERUP_SPAWN_CHANCE_MIN) * d as f64;
 
@@ -640,10 +641,15 @@ fn moving_platform_system(
     time: Res<Time>,
     mut query: Query<(&mut Transform, &MovingPlatform, &mut PlatformVelocity)>,
 ) {
-    let t = time.elapsed_secs();
+    let dt = time.delta_secs();
     for (mut transform, moving, mut plat_vel) in &mut query {
+        let old_y = transform.translation.y;
+        // Use cumulative delta to avoid discontinuities on unpause
+        let t = time.elapsed_secs();
         let new_y = moving.base_y + (t * moving.speed).sin() * moving.range;
-        plat_vel.0.y = new_y - transform.translation.y;
+        let delta_y = new_y - old_y;
+        // Store as velocity (per second) so consumers can multiply by dt
+        plat_vel.0.y = if dt > 0.0 { delta_y / dt } else { 0.0 };
         transform.translation.y = new_y;
     }
 }

@@ -372,14 +372,26 @@ fn current_timestamp() -> String {
             .map(|d| d.as_secs())
             .unwrap_or(0);
         // Format as readable date
-        let days = secs / 86400;
-        let years = 1970 + days / 365; // approximate
-        let remaining_days = days % 365;
-        let months = remaining_days / 30 + 1;
-        let day = remaining_days % 30 + 1;
+        // Proper date calculation accounting for leap years
+        let mut days = (secs / 86400) as i64;
         let hour = (secs % 86400) / 3600;
         let minute = (secs % 3600) / 60;
-        format!("{:04}-{:02}-{:02} {:02}:{:02}", years, months, day, hour, minute)
+
+        let mut year = 1970i64;
+        loop {
+            let days_in_year = if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { 366 } else { 365 };
+            if days < days_in_year { break; }
+            days -= days_in_year;
+            year += 1;
+        }
+        let is_leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+        let month_days = [31, if is_leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        let mut month = 0usize;
+        for (i, &md) in month_days.iter().enumerate() {
+            if days < md as i64 { month = i; break; }
+            days -= md as i64;
+        }
+        format!("{:04}-{:02}-{:02} {:02}:{:02}", year, month + 1, days + 1, hour, minute)
     }
     #[cfg(target_arch = "wasm32")]
     {

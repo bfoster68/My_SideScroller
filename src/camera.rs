@@ -133,8 +133,11 @@ fn camera_follow(
     let target_x = player_tf.translation.x;
     let target_y = player_tf.translation.y + CAMERA_Y_OFFSET;
 
-    camera_tf.translation.x += (target_x - camera_tf.translation.x) * CAMERA_LERP_SPEED;
-    camera_tf.translation.y += (target_y - camera_tf.translation.y) * CAMERA_LERP_SPEED;
+    // Frame-rate-independent exponential smoothing
+    let dt = time.delta_secs();
+    let smoothing = 1.0 - (-CAMERA_LERP_SPEED * 60.0 * dt).exp();
+    camera_tf.translation.x += (target_x - camera_tf.translation.x) * smoothing;
+    camera_tf.translation.y += (target_y - camera_tf.translation.y) * smoothing;
 
     // Apply screen shake offset (trauma² for nice falloff)
     if shake.trauma > 0.0 {

@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 
 use crate::audio::GameSettings;
-use crate::checkpoint::CheckpointData;
 use crate::constants::*;
 use crate::enemies::ComboTracker;
 use crate::health::Health;
@@ -543,8 +542,13 @@ fn spawn_save_menu_overlay(
 fn update_save_menu_display(
     save_sel: Res<crate::state::SaveMenuSelection>,
     mut query: Query<(&SaveMenuItem, &mut TextColor, &mut Text)>,
+    mut cached_slots: Local<Option<Vec<crate::save::SlotEntry>>>,
 ) {
-    let slots = crate::save::list_slots();
+    // Cache slot data to avoid filesystem I/O every frame; refresh when selection changes
+    if save_sel.is_changed() || cached_slots.is_none() {
+        *cached_slots = Some(crate::save::list_slots());
+    }
+    let slots = cached_slots.as_ref().unwrap();
     for (item, mut color, mut text) in &mut query {
         let is_selected = item.0 == save_sel.index;
 
@@ -681,8 +685,9 @@ fn update_settings_display(
 
 /// Build a visual volume bar like `[========--] 80%`
 fn volume_bar(val: f32) -> String {
-    let pct = (val * 100.0).round() as u32;
-    let filled = (val * 10.0).round() as usize;
+    let clamped = val.clamp(0.0, 1.0);
+    let pct = (clamped * 100.0).round() as u32;
+    let filled = (clamped * 10.0).round() as usize;
     let empty = 10 - filled;
     format!("[{}{}] {}%", "=".repeat(filled), "-".repeat(empty), pct)
 }

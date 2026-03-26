@@ -30,7 +30,8 @@ impl Plugin for TransitionPlugin {
 }
 
 /// Call this to start a fade transition to a target state.
-/// If a transition is already active, does nothing.
+/// If a transition is already active, the resource insert replaces it
+/// but we must avoid spawning duplicate overlays.
 pub fn start_transition(commands: &mut Commands, target_state: GameState) {
     commands.insert_resource(ScreenTransition {
         timer: Timer::from_seconds(FADE_DURATION, TimerMode::Once),
@@ -39,6 +40,7 @@ pub fn start_transition(commands: &mut Commands, target_state: GameState) {
     });
 
     // Spawn the full-screen black overlay at alpha 0
+    // Note: if a transition overlay already exists, update_transition will reuse it
     commands.spawn((
         TransitionOverlay,
         Node {

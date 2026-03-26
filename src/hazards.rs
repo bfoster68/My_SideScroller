@@ -68,11 +68,15 @@ impl Plugin for HazardsPlugin {
                 boulder_warning_system,
                 boulder_movement,
                 timed_trap_system,
-                spike_player_collision,
-                saw_player_collision,
-                lava_player_collision,
-                boulder_player_collision,
-                timed_trap_player_collision,
+                // Chain collision systems so only one can deal damage per frame
+                // (invincibility from the first hit blocks the rest)
+                (
+                    spike_player_collision,
+                    saw_player_collision,
+                    lava_player_collision,
+                    boulder_player_collision,
+                    timed_trap_player_collision,
+                ).chain(),
             )
                 .after(PlayerMovementSet)
                 .run_if(in_state(GameState::Playing)),

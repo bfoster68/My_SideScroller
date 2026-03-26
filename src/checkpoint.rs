@@ -199,10 +199,13 @@ fn check_section(
 
     let new_section = score.value / SECTION_INTERVAL;
     if (new_section > data.section && data.section > 0) || (new_section > 0 && data.section == 0 && score.value >= SECTION_INTERVAL) {
+        // Jump to the detected section to prevent cascading if bonus pushes past next threshold
         data.section = new_section;
 
-        // Award bonus score
-        score.value += SECTION_BONUS_SCORE;
+        // Award bonus score (capped so it can't push past the next section boundary)
+        let next_boundary = (new_section + 1) * SECTION_INTERVAL;
+        let max_bonus = next_boundary.saturating_sub(score.value).saturating_sub(1);
+        score.value += SECTION_BONUS_SCORE.min(max_bonus);
 
         // Insert banner resource
         commands.insert_resource(SectionBanner {

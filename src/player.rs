@@ -184,6 +184,11 @@ fn player_input(
         jump_counter.jumps_remaining = max_jumps;
     } else {
         grounded.coyote_timer -= time.delta_secs();
+        // If we just left the ground without jumping, consume one jump
+        // so coyote time doesn't grant an extra jump on top of double jump.
+        if jump_counter.jumps_remaining == max_jumps {
+            jump_counter.jumps_remaining = max_jumps.saturating_sub(1);
+        }
     }
 
     let can_jump =
@@ -271,7 +276,7 @@ fn apply_velocity(
     transform.translation.y += velocity.0.y * time.delta_secs();
 
     grounded.on_ground = false;
-    let mut riding_delta_y = 0.0_f32;
+    let mut riding_velocity = Vec2::ZERO;
 
     for (plat_tf, plat_size, plat_vel) in &platform_query {
         let plat_half_w = plat_size.0.x / 2.0;
@@ -289,7 +294,7 @@ fn apply_velocity(
                 // Resting exactly on top — just mark grounded, no position correction.
                 grounded.on_ground = true;
                 if let Some(pv) = plat_vel {
-                    riding_delta_y = pv.0.y;
+                    riding_velocity = pv.0;
                 }
             } else if overlap_y > 0.0 && transform.translation.y > plat_tf.translation.y {
                 // Landing on top — snap to surface and carry platform velocity
@@ -298,7 +303,7 @@ fn apply_velocity(
                 velocity.0.y = 0.0;
                 grounded.on_ground = true;
                 if let Some(pv) = plat_vel {
-                    riding_delta_y = pv.0.y;
+                    riding_velocity = pv.0;
                 }
             } else if overlap_y > 0.0 {
                 // Bonking head on bottom
@@ -309,9 +314,15 @@ fn apply_velocity(
         }
     }
 
-    // Carry the player along with the moving platform
-    if grounded.on_ground && riding_delta_y.abs() > 0.0 {
-        transform.translation.y += riding_delta_y;
+    // Carry the player along with the moving platform (both axes)
+    if grounded.on_ground {
+        let dt = time.delta_secs();
+        if riding_velocity.x.abs() > 0.0 {
+            transform.translation.x += riding_velocity.x * dt;
+        }
+        if riding_velocity.y.abs() > 0.0 {
+            transform.translation.y += riding_velocity.y * dt;
+        }
     }
 }
 
@@ -346,8 +357,9 @@ fn respawn_on_fall(
     // the player is falling and there is no platform beneath them.
     let needs_respawn = if transform.translation.y < FALL_LIMIT {
         true
-    } else if !grounded.on_ground && velocity.0.y < 0.0 {
-        // Check if ANY platform exists below the player within reach
+    } else if !grounded.on_ground && velocity.0.y < 0.0 && transform.translation.y < GROUND_Y {
+        // Only check for missing platforms when below ground level
+        // to avoid false respawns during normal jump arcs over gaps
         let player_x = transform.translation.x;
         let player_y = transform.translation.y;
         let has_platform_below = platform_query.iter().any(|(plat_tf, plat_size)| {

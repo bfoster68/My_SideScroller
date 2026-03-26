@@ -42,7 +42,8 @@ impl Plugin for BreakablePlugin {
                     block_stomp_damage
                         .after(PlayerMovementSet),
                     block_run_wear
-                        .after(PlayerMovementSet),
+                        .after(PlayerMovementSet)
+                        .after(block_stomp_damage),
                     update_debris,
                 )
                     .run_if(in_state(GameState::Playing)),
@@ -266,7 +267,7 @@ fn block_run_wear(
             // Interpolate color between current health and next damage level
             // to show gradual visual degradation
             let base_color = block_color_for_health(block.health, block.max_health);
-            let next_color = block_color_for_health(block.health - 1, block.max_health);
+            let next_color = block_color_for_health((block.health - 1).max(0), block.max_health);
             let t = block.wear;
             let blended = blend_colors(base_color, next_color, t);
             sprite.color = blended;

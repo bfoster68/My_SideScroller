@@ -77,7 +77,7 @@ fn update_game_input(
     input.jump_released = keyboard.just_released(KeyCode::Space);
     input.jump_held = keyboard.pressed(KeyCode::Space);
     input.pause_pressed = keyboard.just_pressed(KeyCode::Escape);
-    input.confirm_pressed = keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space);
+    input.confirm_pressed = keyboard.just_pressed(KeyCode::Enter);
     input.up_pressed = keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW);
     input.down_pressed = keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS);
     input.left_pressed = keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyA);

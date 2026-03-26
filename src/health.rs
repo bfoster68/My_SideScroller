@@ -42,9 +42,7 @@ pub struct Knockback {
     pub timer: Timer,
 }
 
-/// Message fired when the player dies (health reaches 0).
-#[derive(Message)]
-pub struct PlayerDeathEvent;
+// PlayerDeathEvent removed — was written but never consumed by any system.
 
 /// Attached to the player during the death animation to delay the GameOver transition.
 #[derive(Component)]
@@ -58,7 +56,6 @@ pub struct HealthPlugin;
 impl Plugin for HealthPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<DamageEvent>()
-            .add_message::<PlayerDeathEvent>()
             .add_systems(
                 Update,
                 (apply_damage, tick_knockback, tick_death_animation, update_death_fragments, tick_invincibility, flash_invincible)
@@ -72,7 +69,6 @@ impl Plugin for HealthPlugin {
 fn apply_damage(
     mut commands: Commands,
     mut damage_events: MessageReader<DamageEvent>,
-    mut death_events: MessageWriter<PlayerDeathEvent>,
     mut query: Query<
         (Entity, &Transform, &mut Health, &mut Velocity, Option<&Invincible>, Option<&DeathTimer>, Option<&mut Shield>),
         With<Player>,
@@ -117,7 +113,6 @@ fn apply_damage(
         health.current = (health.current - event.amount).max(0);
 
         if health.current <= 0 {
-            death_events.write(PlayerDeathEvent);
             // Play death SFX (quieter than other effects)
             if let Some(ref handles) = audio_handles {
                 if let Some(ref handle) = handles.death {

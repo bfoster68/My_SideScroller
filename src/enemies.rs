@@ -274,9 +274,9 @@ fn shooter_fire(
         + (PROJECTILE_SPEED_MAX - PROJECTILE_SPEED_MIN) * d;
 
     for (shooter_gtf, mut shoot_timer) in &mut query {
-        // Dynamically adjust fire rate based on current difficulty
-        shoot_timer.timer.set_duration(std::time::Duration::from_secs_f32(fire_interval));
+        // Tick first, then adjust fire rate for next cycle to avoid erratic firing
         shoot_timer.timer.tick(time.delta());
+        shoot_timer.timer.set_duration(std::time::Duration::from_secs_f32(fire_interval));
 
         if shoot_timer.timer.just_finished() {
             let shooter_pos = shooter_gtf.translation();
@@ -520,7 +520,7 @@ fn enemy_player_collision(
         (&Transform, &mut Velocity, Option<&Invincible>, Option<&crate::health::DeathTimer>),
         With<Player>,
     >,
-    enemy_query: Query<(Entity, &GlobalTransform), (With<Enemy>, Without<Projectile>)>,
+    enemy_query: Query<(Entity, &GlobalTransform, &Sprite), (With<Enemy>, Without<Projectile>)>,
     mut damage_events: MessageWriter<DamageEvent>,
     mut score: ResMut<Score>,
     mut combo: ResMut<ComboTracker>,
@@ -535,11 +535,12 @@ fn enemy_player_collision(
 
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
-    let enemy_half_w = ENEMY_WIDTH / 2.0;
-    let enemy_half_h = ENEMY_HEIGHT / 2.0;
 
-    for (enemy_entity, enemy_gtf) in &enemy_query {
+    for (enemy_entity, enemy_gtf, enemy_sprite) in &enemy_query {
         let enemy_pos = enemy_gtf.translation();
+        // Use the enemy's actual sprite size for accurate hitboxes
+        let enemy_size = enemy_sprite.custom_size.unwrap_or(Vec2::new(ENEMY_WIDTH, ENEMY_HEIGHT));
+        let (enemy_half_w, enemy_half_h) = (enemy_size.x / 2.0, enemy_size.y / 2.0);
         let overlap_x = (player_half_w + enemy_half_w)
             - (player_tf.translation.x - enemy_pos.x).abs();
         let overlap_y = (player_half_h + enemy_half_h)
@@ -642,7 +643,7 @@ fn reset_combo_on_land(
     if let Ok((tf, grounded)) = player_query.single() {
         if grounded.on_ground && combo.count >= 2 {
             // Visual feedback: flash "COMBO x{N}" in red before resetting
-            let combo_power = combo.count.min(MAX_COMBO_POWER);
+            let combo_power = (combo.count.saturating_sub(1)).min(MAX_COMBO_POWER);
             let multiplier = 1u32 << combo_power;
             commands.spawn((
                 Text2d::new(format!("x{} COMBO", multiplier)),
