@@ -44,10 +44,28 @@ pub const MOVING_PLATFORM_RANGE: f32 = 50.0;
 
 // Jump physics constraints for reachability
 pub const MAX_JUMP_HEIGHT: f32 = 130.0;
+pub const PLATFORM_CEILING_Y: f32 = 250.0; // max Y for floating platforms
 
 // Camera
 pub const CAMERA_LERP_SPEED: f32 = 0.1;
-pub const CAMERA_Y_OFFSET: f32 = 50.0;
+pub const CAMERA_Y_OFFSET: f32 = 70.0;
+
+// New platform types
+pub const ICE_FRICTION_MULTIPLIER: f32 = 0.3;
+pub const CONVEYOR_SPEED: f32 = 80.0;
+pub const SPRING_BOUNCE_MULTIPLIER: f32 = 1.8;
+pub const CRUMBLE_WARN_TIME: f32 = 0.8;
+pub const CRUMBLE_FALL_TIME: f32 = 0.4;
+
+// Platform type spawn chances
+pub const ONE_WAY_CHANCE: f64 = 0.12;
+pub const CONVEYOR_CHANCE: f64 = 0.06;
+pub const CONVEYOR_START_DIFFICULTY: f32 = 0.3;
+pub const ICE_CHANCE: f64 = 0.05;
+pub const ICE_START_DIFFICULTY: f32 = 0.2;
+pub const CRUMBLE_MIN_CHANCE: f64 = 0.06;
+pub const CRUMBLE_MAX_CHANCE: f64 = 0.10;
+pub const SPRING_CHANCE: f64 = 0.04;
 
 // Screen shake
 pub const SHAKE_MAX_OFFSET: f32 = 8.0;

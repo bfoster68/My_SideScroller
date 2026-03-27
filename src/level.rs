@@ -46,6 +46,171 @@ pub struct MovingPlatform {
 #[derive(Component, Default)]
 pub struct PlatformVelocity(pub Vec2);
 
+/// One-way platform: player can jump through from below, drop through with down+jump.
+#[derive(Component)]
+pub struct OneWayPlatform;
+
+/// Conveyor platform: pushes the player in a direction.
+#[derive(Component)]
+pub struct ConveyorPlatform {
+    pub speed: f32, // positive = right, negative = left
+}
+
+/// Ice platform: reduced friction when player stands on it.
+#[derive(Component)]
+pub struct IcePlatform;
+
+/// Spring/bounce platform: launches player upward on contact.
+#[derive(Component)]
+pub struct SpringPlatform {
+    pub force_multiplier: f32,
+}
+
+/// Crumbling platform: starts shaking after player lands, then falls.
+#[derive(Component)]
+pub struct CrumblingPlatform {
+    pub state: CrumbleState,
+    pub timer: Timer,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum CrumbleState {
+    Idle,
+    Shaking,
+    Falling,
+}
+
+/// Height pattern for intentional platform placement variety.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum HeightPattern {
+    Ascending,   // consistent upward steps
+    Descending,  // consistent downward steps
+    Plateau,     // similar height ±20px (rest area)
+    Valley,      // descend then ascend
+    Peak,        // ascend then descend
+    Freeform,    // random walk (legacy behavior)
+}
+
+impl HeightPattern {
+    /// Pick the next pattern, biased by current height and difficulty.
+    fn pick_next(current_y: f32, difficulty: f32, previous: HeightPattern, rng: &mut impl rand::Rng) -> (HeightPattern, u32) {
+        let ground_surface = GROUND_Y + GROUND_HEIGHT / 2.0;
+        let ceiling = PLATFORM_CEILING_Y;
+        let range = ceiling - ground_surface;
+        // How high are we relative to the full range? 0.0 = bottom, 1.0 = top
+        let height_ratio = ((current_y - ground_surface) / range).clamp(0.0, 1.0);
+
+        // Build weighted options, avoiding repeat of previous
+        let mut options: Vec<(HeightPattern, f64)> = Vec::new();
+
+        // If low, favor ascending; if high, favor descending
+        let asc_weight: f64 = (1.0 - height_ratio as f64) * 1.5 + 0.3;
+        let desc_weight: f64 = height_ratio as f64 * 1.5 + 0.3;
+        let plateau_weight: f64 = (0.8 - 0.3 * difficulty as f64).max(0.1);
+        let valley_weight: f64 = 0.4 + 0.6 * difficulty as f64;
+        let peak_weight: f64 = 0.4 + 0.6 * difficulty as f64;
+        let freeform_weight: f64 = 0.5;
+
+        let candidates: [(HeightPattern, f64); 6] = [
+            (HeightPattern::Ascending, asc_weight),
+            (HeightPattern::Descending, desc_weight),
+            (HeightPattern::Plateau, plateau_weight),
+            (HeightPattern::Valley, valley_weight),
+            (HeightPattern::Peak, peak_weight),
+            (HeightPattern::Freeform, freeform_weight),
+        ];
+
+        for (pat, weight) in &candidates {
+            if *pat != previous {
+                options.push((*pat, *weight));
+            }
+        }
+
+        // Weighted random selection
+        let total: f64 = options.iter().map(|(_, w)| w).sum();
+        let mut roll = rng.gen::<f64>() * total;
+        let mut chosen = HeightPattern::Freeform;
+        for (pat, weight) in &options {
+            roll -= weight;
+            if roll <= 0.0 {
+                chosen = *pat;
+                break;
+            }
+        }
+
+        // Pattern length: Valley/Peak need at least 4, others 2-5
+        let len = match chosen {
+            HeightPattern::Valley | HeightPattern::Peak => rng.gen_range(4..=6),
+            HeightPattern::Plateau => rng.gen_range(2..=4),
+            _ => rng.gen_range(2..=5),
+        };
+
+        (chosen, len)
+    }
+
+    /// Compute the target dy for this platform given where we are in the pattern.
+    fn compute_dy(&self, step: u32, total: u32, difficulty: f32, rng: &mut impl rand::Rng) -> f32 {
+        let progress = step as f32 / total as f32; // 0.0 to ~1.0
+        match self {
+            HeightPattern::Ascending => {
+                let step_size = 40.0 + 50.0 * difficulty;
+                rng.gen_range(step_size * 0.7..step_size * 1.3)
+            }
+            HeightPattern::Descending => {
+                let step_size = 40.0 + 60.0 * difficulty;
+                -rng.gen_range(step_size * 0.7..step_size * 1.3)
+            }
+            HeightPattern::Plateau => {
+                rng.gen_range(-20.0..20.0)
+            }
+            HeightPattern::Valley => {
+                // First half descends, second half ascends
+                if progress < 0.5 {
+                    -rng.gen_range(40.0..80.0)
+                } else {
+                    rng.gen_range(40.0..80.0)
+                }
+            }
+            HeightPattern::Peak => {
+                // First half ascends, second half descends
+                if progress < 0.5 {
+                    rng.gen_range(40.0..80.0)
+                } else {
+                    -rng.gen_range(40.0..80.0)
+                }
+            }
+            HeightPattern::Freeform => {
+                rng.gen_range(-MAX_JUMP_HEIGHT..MAX_JUMP_HEIGHT)
+            }
+        }
+    }
+
+    /// Get gap multiplier for this pattern (affects horizontal spacing).
+    fn gap_multiplier(&self, step: u32, total: u32) -> f32 {
+        match self {
+            HeightPattern::Ascending => 0.8,   // tighter gaps for climbing
+            HeightPattern::Descending => 1.2,  // wider gaps for falling
+            HeightPattern::Plateau => 1.0,     // standard
+            HeightPattern::Valley | HeightPattern::Peak => {
+                let progress = step as f32 / total as f32;
+                if progress < 0.5 { 0.9 } else { 1.1 }
+            }
+            HeightPattern::Freeform => 1.0,
+        }
+    }
+
+    /// Get width multiplier (narrower on climbs, wider on descents).
+    fn width_multiplier(&self) -> f32 {
+        match self {
+            HeightPattern::Ascending => 0.85,
+            HeightPattern::Descending => 1.15,
+            HeightPattern::Plateau => 1.2,
+            HeightPattern::Valley | HeightPattern::Peak => 1.0,
+            HeightPattern::Freeform => 1.0,
+        }
+    }
+}
+
 /// Tracks how far right we've generated content.
 #[derive(Resource)]
 pub struct ChunkTracker {
@@ -58,6 +223,16 @@ pub struct ChunkTracker {
     pub last_ldtk_chunk_x: f32,
     /// Count of platforms since last ground-reachable one.
     pub platforms_since_ground_level: u32,
+    /// Current height pattern being generated.
+    pub current_pattern: HeightPattern,
+    /// Steps remaining in the current pattern.
+    pub pattern_remaining: u32,
+    /// Current step within the pattern (for progress tracking).
+    pub pattern_step: u32,
+    /// Total steps of the current pattern (for progress ratio).
+    pub pattern_total: u32,
+    /// Was the last platform a crumbling or breakable type?
+    pub last_was_fragile: bool,
 }
 
 impl Default for ChunkTracker {
@@ -65,10 +240,15 @@ impl Default for ChunkTracker {
         Self {
             rightmost_ground_x: SPAWN_X - 200.0,
             rightmost_platform_x: SPAWN_X,
-            last_platform_y: GROUND_Y + GROUND_HEIGHT / 2.0 + 80.0,
+            last_platform_y: GROUND_Y + GROUND_HEIGHT / 2.0 + 100.0,
             consecutive_ground_gaps: 0,
             last_ldtk_chunk_x: SPAWN_X - LDTK_CHUNK_MIN_SPACING * 2.0,
             platforms_since_ground_level: 0,
+            current_pattern: HeightPattern::Ascending,
+            pattern_remaining: 3,
+            pattern_step: 0,
+            pattern_total: 3,
+            last_was_fragile: false,
         }
     }
 }
@@ -101,6 +281,7 @@ impl Plugin for LevelPlugin {
                     generate_chunks,
                     despawn_behind_camera,
                     moving_platform_system,
+                    update_crumbling_platforms,
                 )
                     .chain()
                     .before(PlayerMovementSet)
@@ -170,6 +351,7 @@ fn reset_level_if_needed(
                 With<FallingBoulder>,
                 With<TimedTrap>,
                 With<CheckpointFlag>,
+                With<CrumblingPlatform>,
             )>,
             Without<ChildOf>,
         ),
@@ -341,17 +523,32 @@ fn generate_chunks(
         }
 
         // --- Procedural platform generation (fallback) ---
-        let dx = rng.gen_range(min_gap..max_gap);
 
-        // Constrain upward dy: for larger gaps, limit how much the platform can rise.
-        // The player has a double jump, so max reachable height is generous (~130px),
-        // but for very wide gaps the player needs horizontal travel time which reduces
-        // effective rise. Scale max rise from full MAX_JUMP_HEIGHT at min_gap down to
-        // 60% at max_gap.
+        // Advance pattern state machine
+        if tracker.pattern_remaining == 0 {
+            let (new_pattern, new_len) = HeightPattern::pick_next(
+                tracker.last_platform_y, d, tracker.current_pattern, &mut rng,
+            );
+            tracker.current_pattern = new_pattern;
+            tracker.pattern_remaining = new_len;
+            tracker.pattern_step = 0;
+            tracker.pattern_total = new_len;
+        }
+
+        // Compute pattern-aware dy and gap
+        let gap_mult = tracker.current_pattern.gap_multiplier(tracker.pattern_step, tracker.pattern_total);
+        let base_gap = rng.gen_range(min_gap..max_gap);
+        let dx = (base_gap * gap_mult).max(min_gap);
+
+        // Constrain upward dy for wider gaps
         let gap_fraction = ((dx - min_gap) / (max_gap - min_gap + 1.0)).clamp(0.0, 1.0);
         let max_rise = MAX_JUMP_HEIGHT * (1.0 - 0.4 * gap_fraction);
 
-        let dy = rng.gen_range(-MAX_JUMP_HEIGHT..max_rise);
+        let pattern_dy = tracker.current_pattern.compute_dy(
+            tracker.pattern_step, tracker.pattern_total, d, &mut rng,
+        );
+        // Clamp dy to physics limits
+        let dy = pattern_dy.clamp(-MAX_JUMP_HEIGHT, max_rise);
 
         // Ground surface Y for reference
         let ground_surface = GROUND_Y + GROUND_HEIGHT / 2.0;
@@ -359,27 +556,88 @@ fn generate_chunks(
         let new_x = tracker.rightmost_platform_x + dx;
         let mut new_y = (tracker.last_platform_y + dy)
             .max(ground_surface + 60.0)
-            .min(GROUND_Y + 350.0);
+            .min(PLATFORM_CEILING_Y);
 
-        // Safety: every 8 platforms, force one within jump range of the ground
+        // Safety: every 10 platforms, force one within jump range of the ground
         // so the player always has a way back up if they fall.
         tracker.platforms_since_ground_level += 1;
-        if tracker.platforms_since_ground_level >= 8 {
+        if tracker.platforms_since_ground_level >= 10 {
             new_y = ground_surface + rng.gen_range(60.0..MAX_JUMP_HEIGHT);
             tracker.platforms_since_ground_level = 0;
         }
 
-        // Platform width decreases slightly with difficulty
-        let min_w = lerp_diff(PLATFORM_MIN_WIDTH, PLATFORM_MIN_WIDTH * 0.7, d);
-        let max_w = lerp_diff(PLATFORM_MAX_WIDTH, PLATFORM_MAX_WIDTH * 0.7, d);
-        let width = rng.gen_range(min_w..max_w);
+        // Advance pattern step
+        tracker.pattern_step += 1;
+        tracker.pattern_remaining -= 1;
+
+        // Platform width: pattern-aware + difficulty scaling
+        let width_mult = tracker.current_pattern.width_multiplier();
+        let min_w = lerp_diff(PLATFORM_MIN_WIDTH, PLATFORM_MIN_WIDTH * 0.7, d) * width_mult;
+        let max_w = lerp_diff(PLATFORM_MAX_WIDTH, PLATFORM_MAX_WIDTH * 0.7, d) * width_mult;
+        let width = rng.gen_range(min_w.max(60.0)..max_w.max(min_w + 10.0));
         let color = plat_colors[color_idx % plat_colors.len()];
         color_idx += 1;
 
-        // Maybe make it a moving or breakable platform
-        let is_moving = rng.gen_bool(moving_chance.min(0.5));
+        // --- Platform type selection (weighted) ---
         let breakable_chance = lerp_diff(BREAKABLE_MIN_CHANCE as f32, BREAKABLE_MAX_CHANCE as f32, d) as f64;
-        let is_breakable = !is_moving && rng.gen_bool(breakable_chance.min(0.5));
+        let crumble_chance = if d > 0.15 {
+            lerp_diff_f64(CRUMBLE_MIN_CHANCE, CRUMBLE_MAX_CHANCE, d)
+        } else { 0.0 };
+        let one_way_chance = ONE_WAY_CHANCE;
+        let conveyor_chance = if d > CONVEYOR_START_DIFFICULTY { CONVEYOR_CHANCE } else { 0.0 };
+        let ice_chance = if d > ICE_START_DIFFICULTY { ICE_CHANCE } else { 0.0 };
+        let spring_chance = if tracker.current_pattern == HeightPattern::Ascending { SPRING_CHANCE } else { 0.0 };
+
+        // Normalize: regular + moving fill remaining weight
+        let special_total = breakable_chance + crumble_chance + one_way_chance
+            + conveyor_chance + ice_chance + spring_chance;
+        let regular_moving_share = (1.0 - special_total).max(0.2);
+        let moving_share = moving_chance.min(0.3) * regular_moving_share;
+
+        let type_roll: f64 = rng.gen();
+        let mut threshold = 0.0;
+
+        // Prevent back-to-back fragile platforms
+        let allow_fragile = !tracker.last_was_fragile;
+
+        // Determine platform type
+        threshold += breakable_chance;
+        let is_breakable = allow_fragile && type_roll < threshold;
+
+        let is_crumbling = if !is_breakable {
+            threshold += crumble_chance;
+            allow_fragile && type_roll < threshold
+        } else { false };
+
+        let is_one_way = if !is_breakable && !is_crumbling {
+            threshold += one_way_chance;
+            type_roll < threshold
+        } else { false };
+
+        let is_conveyor = if !is_breakable && !is_crumbling && !is_one_way {
+            threshold += conveyor_chance;
+            type_roll < threshold
+        } else { false };
+
+        let is_ice = if !is_breakable && !is_crumbling && !is_one_way && !is_conveyor {
+            threshold += ice_chance;
+            type_roll < threshold
+        } else { false };
+
+        let is_spring = if !is_breakable && !is_crumbling && !is_one_way && !is_conveyor && !is_ice {
+            threshold += spring_chance;
+            type_roll < threshold
+        } else { false };
+
+        let is_moving = if !is_breakable && !is_crumbling && !is_one_way && !is_conveyor
+            && !is_ice && !is_spring
+        {
+            threshold += moving_share;
+            type_roll < threshold
+        } else { false };
+
+        // Track fragile state
+        tracker.last_was_fragile = is_breakable || is_crumbling;
         if is_moving {
             let plat_entity = spawn_moving_platform(
                 &mut commands,
@@ -443,68 +701,102 @@ fn generate_chunks(
                     spawn_coin(&mut commands, new_x, new_y, game_sprites.coin.clone());
                 }
             }
-        } else {
+        } else if is_crumbling {
+            // Crumbling platform — shakes then falls after player lands
             let plat_entity = spawn_platform(
-                &mut commands,
-                new_x,
-                new_y,
-                width,
-                PLATFORM_HEIGHT,
-                color,
+                &mut commands, new_x, new_y, width, PLATFORM_HEIGHT,
+                Color::srgb(0.6, 0.5, 0.4), // sandy/cracked color
                 false,
             );
-
-            // Decide what to place on this platform
-            let roll: f64 = rng.gen();
-            let saw_chance = spike_chance * 0.5;
-            let spike_remaining = spike_chance - saw_chance;
-            // Split enemy budget: walking, flying, shooter, charging, flying_ranged
-            let charging_pct = if d > CHARGING_START_DIFFICULTY { CHARGING_SPAWN_WEIGHT } else { 0.0 };
-            let flying_ranged_pct = if d > FLYING_RANGED_START_DIFFICULTY { FLYING_RANGED_SPAWN_WEIGHT } else { 0.0 };
-            let remaining = 1.0 - charging_pct - flying_ranged_pct;
-            let base_total = ENEMY_WALKING_WEIGHT + ENEMY_FLYING_WEIGHT + ENEMY_SHOOTER_WEIGHT;
-            let walking_chance = enemy_chance * (ENEMY_WALKING_WEIGHT * remaining / base_total);
-            let flying_chance = enemy_chance * (ENEMY_FLYING_WEIGHT * remaining / base_total);
-            let shooter_chance = enemy_chance * (ENEMY_SHOOTER_WEIGHT * remaining / base_total);
-            let charging_chance = enemy_chance * charging_pct;
-            let flying_ranged_chance = enemy_chance * flying_ranged_pct;
-            if roll < walking_chance && width >= ENEMY_WIDTH * 2.5 {
-                spawn_enemy(&mut commands, new_x, new_y, width, game_sprites.enemy_walk.clone());
-            } else if roll < walking_chance + flying_chance {
-                spawn_flying_enemy(&mut commands, new_x, new_y, game_sprites.enemy_fly.clone());
-            } else if roll < walking_chance + flying_chance + shooter_chance {
-                spawn_shooter_enemy(&mut commands, new_x, new_y, game_sprites.enemy_shooter.clone());
-            } else if roll < walking_chance + flying_chance + shooter_chance + charging_chance && width >= CHARGING_ENEMY_WIDTH * 2.5 {
-                spawn_charging_enemy(&mut commands, new_x, new_y, width, game_sprites.enemy_charging.clone());
-            } else if roll < walking_chance + flying_chance + shooter_chance + charging_chance + flying_ranged_chance {
-                spawn_flying_ranged_enemy(&mut commands, new_x, new_y, game_sprites.enemy_flying_ranged.clone());
-            } else if roll < enemy_chance + saw_chance && width >= SAW_SIZE * 3.0 {
-                spawn_saw(&mut commands, new_x, new_y, width, game_sprites.saw.clone());
-            } else if roll < enemy_chance + saw_chance + spike_remaining {
-                // Timed traps replace some spikes at higher difficulty
-                if d > 0.3 && rng.gen_bool(0.3) {
-                    spawn_timed_trap(&mut commands, new_x, new_y, game_sprites.timed_trap.clone());
-                } else {
-                    spawn_spike(&mut commands, new_x, new_y, game_sprites.spike.clone());
-                }
-            } else if roll < enemy_chance + spike_chance + coin_chance {
-                // Small chance to spawn a power-up instead of a coin
-                if rng.gen_bool(powerup_chance) {
-                    spawn_powerup(
-                        &mut commands, new_x, new_y,
-                        game_sprites.powerup_speed.clone(),
-                        game_sprites.powerup_jump.clone(),
-                        game_sprites.powerup_shield.clone(),
-                    );
-                } else {
-                    spawn_coin(&mut commands, new_x, new_y, game_sprites.coin.clone());
-                }
+            commands.entity(plat_entity).insert(CrumblingPlatform {
+                state: CrumbleState::Idle,
+                timer: Timer::from_seconds(CRUMBLE_WARN_TIME, TimerMode::Once),
+            });
+            // Only coins on crumbling platforms
+            if rng.gen_bool(coin_chance) {
+                spawn_coin(&mut commands, new_x, new_y, game_sprites.coin.clone());
             }
+        } else if is_one_way {
+            // One-way platform — can jump through from below
+            let ow_color = Color::srgba(
+                color.to_srgba().red * 0.8,
+                color.to_srgba().green * 0.8,
+                color.to_srgba().blue * 1.2,
+                0.7,
+            );
+            let plat_entity = spawn_platform(
+                &mut commands, new_x, new_y, width, PLATFORM_HEIGHT,
+                ow_color, false,
+            );
+            commands.entity(plat_entity).insert(OneWayPlatform);
+            // Standard entity placement on one-way platforms
+            place_standard_entities(
+                &mut commands, &game_sprites, &mut rng,
+                new_x, new_y, width, d,
+                enemy_chance, spike_chance, coin_chance, powerup_chance,
+            );
+        } else if is_conveyor {
+            // Conveyor platform — pushes player left or right
+            let direction = if rng.gen_bool(0.5) { 1.0 } else { -1.0 };
+            let conv_color = if direction > 0.0 {
+                Color::srgb(0.5, 0.7, 0.5) // greenish for right
+            } else {
+                Color::srgb(0.7, 0.5, 0.5) // reddish for left
+            };
+            let plat_entity = spawn_platform(
+                &mut commands, new_x, new_y, width, PLATFORM_HEIGHT,
+                conv_color, false,
+            );
+            commands.entity(plat_entity).insert(ConveyorPlatform {
+                speed: CONVEYOR_SPEED * direction,
+            });
+            // Only coins on conveyor platforms (hazards would be unfair)
+            if rng.gen_bool(coin_chance) {
+                spawn_coin(&mut commands, new_x, new_y, game_sprites.coin.clone());
+            }
+        } else if is_ice {
+            // Ice platform — reduced friction
+            let plat_entity = spawn_platform(
+                &mut commands, new_x, new_y, width, PLATFORM_HEIGHT,
+                Color::srgb(0.7, 0.85, 0.95), // blue-white ice
+                false,
+            );
+            commands.entity(plat_entity).insert(IcePlatform);
+            place_standard_entities(
+                &mut commands, &game_sprites, &mut rng,
+                new_x, new_y, width, d,
+                enemy_chance, spike_chance, coin_chance, powerup_chance,
+            );
+        } else if is_spring {
+            // Spring platform — bounces player upward
+            let plat_entity = spawn_platform(
+                &mut commands, new_x, new_y, width.max(80.0), PLATFORM_HEIGHT,
+                Color::srgb(0.3, 0.8, 0.3), // green spring
+                false,
+            );
+            commands.entity(plat_entity).insert(SpringPlatform {
+                force_multiplier: SPRING_BOUNCE_MULTIPLIER,
+            });
+            // Coins above spring platforms to reward the bounce
+            let coin_y = new_y + COIN_FLOAT_HEIGHT + 60.0;
+            spawn_coin_at(&mut commands, new_x, coin_y, game_sprites.coin.clone());
+        } else {
+            // Regular static platform
+            let plat_entity = spawn_platform(
+                &mut commands, new_x, new_y, width, PLATFORM_HEIGHT,
+                color, false,
+            );
+            place_standard_entities(
+                &mut commands, &game_sprites, &mut rng,
+                new_x, new_y, width, d,
+                enemy_chance, spike_chance, coin_chance, powerup_chance,
+            );
 
             // Boulder spawner — small chance on platforms at higher difficulty
             if d > 0.4 && rng.gen_bool(0.05) {
                 spawn_boulder_spawner(&mut commands, new_x, new_y, game_sprites.boulder.clone(), game_sprites.boulder_warning.clone());
             }
+            let _ = plat_entity; // suppress unused warning
         }
 
         // Coin formations between platforms (Sonic-style variety).
@@ -583,6 +875,113 @@ fn generate_chunks(
 
         tracker.rightmost_platform_x = new_x;
         tracker.last_platform_y = new_y;
+    }
+}
+
+/// Helper: place standard entities (enemies/hazards/coins) on a platform.
+fn place_standard_entities(
+    commands: &mut Commands,
+    game_sprites: &GameSprites,
+    rng: &mut impl rand::Rng,
+    x: f32,
+    y: f32,
+    width: f32,
+    d: f32,
+    enemy_chance: f64,
+    spike_chance: f64,
+    coin_chance: f64,
+    powerup_chance: f64,
+) {
+    let roll: f64 = rng.gen();
+    let saw_chance = spike_chance * 0.5;
+    let spike_remaining = spike_chance - saw_chance;
+    let charging_pct = if d > CHARGING_START_DIFFICULTY { CHARGING_SPAWN_WEIGHT } else { 0.0 };
+    let flying_ranged_pct = if d > FLYING_RANGED_START_DIFFICULTY { FLYING_RANGED_SPAWN_WEIGHT } else { 0.0 };
+    let remaining = 1.0 - charging_pct - flying_ranged_pct;
+    let base_total = ENEMY_WALKING_WEIGHT + ENEMY_FLYING_WEIGHT + ENEMY_SHOOTER_WEIGHT;
+    let walking_chance = enemy_chance * (ENEMY_WALKING_WEIGHT * remaining / base_total);
+    let flying_chance = enemy_chance * (ENEMY_FLYING_WEIGHT * remaining / base_total);
+    let shooter_chance = enemy_chance * (ENEMY_SHOOTER_WEIGHT * remaining / base_total);
+    let charging_chance = enemy_chance * charging_pct;
+    let flying_ranged_chance = enemy_chance * flying_ranged_pct;
+
+    if roll < walking_chance && width >= ENEMY_WIDTH * 2.5 {
+        spawn_enemy(commands, x, y, width, game_sprites.enemy_walk.clone());
+    } else if roll < walking_chance + flying_chance {
+        spawn_flying_enemy(commands, x, y, game_sprites.enemy_fly.clone());
+    } else if roll < walking_chance + flying_chance + shooter_chance {
+        spawn_shooter_enemy(commands, x, y, game_sprites.enemy_shooter.clone());
+    } else if roll < walking_chance + flying_chance + shooter_chance + charging_chance && width >= CHARGING_ENEMY_WIDTH * 2.5 {
+        spawn_charging_enemy(commands, x, y, width, game_sprites.enemy_charging.clone());
+    } else if roll < walking_chance + flying_chance + shooter_chance + charging_chance + flying_ranged_chance {
+        spawn_flying_ranged_enemy(commands, x, y, game_sprites.enemy_flying_ranged.clone());
+    } else if roll < enemy_chance + saw_chance && width >= SAW_SIZE * 3.0 {
+        spawn_saw(commands, x, y, width, game_sprites.saw.clone());
+    } else if roll < enemy_chance + saw_chance + spike_remaining {
+        if d > 0.3 && rng.gen_bool(0.3) {
+            spawn_timed_trap(commands, x, y, game_sprites.timed_trap.clone());
+        } else {
+            spawn_spike(commands, x, y, game_sprites.spike.clone());
+        }
+    } else if roll < enemy_chance + spike_chance + coin_chance {
+        if rng.gen_bool(powerup_chance) {
+            spawn_powerup(
+                commands, x, y,
+                game_sprites.powerup_speed.clone(),
+                game_sprites.powerup_jump.clone(),
+                game_sprites.powerup_shield.clone(),
+            );
+        } else {
+            spawn_coin(commands, x, y, game_sprites.coin.clone());
+        }
+    }
+}
+
+/// Update crumbling platforms: shake when triggered, then fall and despawn.
+fn update_crumbling_platforms(
+    mut commands: Commands,
+    time: Res<Time>,
+    player_query: Query<(&Transform, &crate::player::Grounded), With<Player>>,
+    mut query: Query<(Entity, &mut Transform, &mut CrumblingPlatform, &PlatformSize), Without<Player>>,
+) {
+    let player_on = player_query.single().ok().and_then(|(pt, grounded)| {
+        if grounded.on_ground { Some(pt.translation) } else { None }
+    });
+
+    for (entity, mut transform, mut crumble, size) in &mut query {
+        match crumble.state {
+            CrumbleState::Idle => {
+                // Check if player is standing on this platform
+                if let Some(pp) = player_on {
+                    let half_w = size.0.x / 2.0 + PLAYER_WIDTH / 2.0;
+                    let on_top = (pp.x - transform.translation.x).abs() < half_w
+                        && (pp.y - transform.translation.y) > 0.0
+                        && (pp.y - transform.translation.y) < size.0.y + PLAYER_HEIGHT;
+                    if on_top {
+                        crumble.state = CrumbleState::Shaking;
+                        crumble.timer = Timer::from_seconds(CRUMBLE_WARN_TIME, TimerMode::Once);
+                    }
+                }
+            }
+            CrumbleState::Shaking => {
+                crumble.timer.tick(time.delta());
+                // Visual shake
+                let shake = (time.elapsed_secs() * 40.0).sin() * 2.0;
+                transform.translation.x += shake * time.delta_secs() * 10.0;
+                if crumble.timer.just_finished() {
+                    crumble.state = CrumbleState::Falling;
+                    crumble.timer = Timer::from_seconds(CRUMBLE_FALL_TIME, TimerMode::Once);
+                }
+            }
+            CrumbleState::Falling => {
+                crumble.timer.tick(time.delta());
+                transform.translation.y += GRAVITY * 0.5 * time.delta_secs();
+                // Fade out
+                if crumble.timer.just_finished() || transform.translation.y < FALL_LIMIT {
+                    commands.entity(entity).despawn();
+                }
+            }
+        }
     }
 }
 
