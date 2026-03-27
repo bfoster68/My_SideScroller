@@ -3,6 +3,8 @@ pub const PLAYER_SPEED: f32 = 300.0;
 pub const GRAVITY: f32 = -800.0;
 pub const JUMP_FORCE: f32 = 500.0;
 pub const JUMP_FORCE_MIN: f32 = 250.0; // Short hop when tapping
+pub const DOUBLE_JUMP_MAX_RATIO: f32 = 0.75; // Best case: 75% of full jump (used while rising)
+pub const DOUBLE_JUMP_MIN_RATIO: f32 = 0.40; // Worst case: 40% of full jump (used while falling fast)
 pub const PLAYER_WIDTH: f32 = 48.0;
 pub const PLAYER_HEIGHT: f32 = 64.0;
 pub const MAX_JUMPS: u32 = 2; // Double jump
@@ -99,7 +101,7 @@ pub const PROJECTILE_LIFETIME: f32 = 2.0;
 pub const SHOOTER_Z: f32 = 0.8;
 
 // Collectibles
-pub const COIN_SIZE: f32 = 20.0;
+pub const COIN_SIZE: f32 = 28.0;
 pub const COIN_BOB_AMPLITUDE: f32 = 6.0;
 pub const COIN_BOB_SPEED: f32 = 3.0;
 pub const COIN_SPIN_SPEED: f32 = 4.0;
