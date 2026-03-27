@@ -6,7 +6,11 @@ use crate::constants::*;
 use crate::enemies::Enemy;
 use crate::hazards::{Lava, Saw, Spike};
 use crate::health::{DeathTimer, Health, Invincible};
-use crate::level::{Platform, PlatformSize, PlatformVelocity};
+use crate::input::GameInput;
+use crate::level::{
+    ConveyorPlatform, IcePlatform, OneWayPlatform, Platform, PlatformSize, PlatformVelocity,
+    SpringPlatform,
+};
 use crate::powerups::{Shield, SpeedBoost, TripleJump};
 use crate::save::ResumeFromCheckpoint;
 use crate::state::GameState;
@@ -59,6 +63,7 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Score>()
             .init_resource::<Coins>()
+            .init_resource::<StandingOnPlatform>()
             .add_systems(
                 Update,
                 spawn_player_if_missing.run_if(in_state(GameState::Playing)),
@@ -128,6 +133,7 @@ fn spawn_player_if_missing(
 fn player_input(
     game_input: Res<crate::input::GameInput>,
     time: Res<Time>,
+    standing: Res<StandingOnPlatform>,
     mut query: Query<
         (
             &mut Velocity,
@@ -169,7 +175,14 @@ fn player_input(
     let input_mult = if knockback.is_some() { 0.3 } else { 1.0 };
 
     // Horizontal movement (supports analog from gamepad)
-    velocity.0.x = game_input.move_x * PLAYER_SPEED * speed_mult * input_mult;
+    // On ice: blend toward target speed slowly (sliding)
+    let target_vx = game_input.move_x * PLAYER_SPEED * speed_mult * input_mult;
+    if standing.on_ice && grounded.on_ground {
+        let blend = ICE_FRICTION_MULTIPLIER * 3.0 * time.delta_secs();
+        velocity.0.x = velocity.0.x + (target_vx - velocity.0.x) * blend.min(1.0);
+    } else {
+        velocity.0.x = target_vx;
+    }
 
     // Determine max jumps (triple jump power-up)
     let max_jumps = if triple_jump.is_some() {
@@ -177,6 +190,14 @@ fn player_input(
     } else {
         MAX_JUMPS
     };
+
+    // Spring bounce: auto-launch when landing on a spring platform
+    if standing.on_spring && grounded.on_ground && velocity.0.y <= 0.0 {
+        velocity.0.y = JUMP_FORCE * standing.spring_multiplier;
+        grounded.on_ground = false;
+        jump_held.0 = true;
+        // Don't consume a jump — spring gives a free bounce
+    }
 
     // Coyote time — grace period after leaving a platform
     if grounded.on_ground {
@@ -247,6 +268,15 @@ fn apply_gravity(
     }
 }
 
+/// Tracks what kind of platform the player is standing on this frame.
+#[derive(Resource, Default)]
+pub struct StandingOnPlatform {
+    pub on_ice: bool,
+    pub conveyor_speed: f32,
+    pub on_spring: bool,
+    pub spring_multiplier: f32,
+}
+
 fn apply_velocity(
     time: Res<Time>,
     mut player_query: Query<
@@ -254,13 +284,26 @@ fn apply_velocity(
         With<Player>,
     >,
     platform_query: Query<
-        (&Transform, &PlatformSize, Option<&PlatformVelocity>),
+        (
+            &Transform,
+            &PlatformSize,
+            Option<&PlatformVelocity>,
+            Option<&OneWayPlatform>,
+            Option<&IcePlatform>,
+            Option<&ConveyorPlatform>,
+            Option<&SpringPlatform>,
+        ),
         (With<Platform>, Without<Player>),
     >,
+    game_input: Res<GameInput>,
+    mut standing: ResMut<StandingOnPlatform>,
 ) {
     let Ok((mut transform, mut velocity, mut grounded)) = player_query.single_mut() else {
         return;
     };
+
+    // Reset standing-on info each frame
+    *standing = StandingOnPlatform::default();
 
     // --- Horizontal pass ---
     transform.translation.x += velocity.0.x * time.delta_secs();
@@ -268,7 +311,10 @@ fn apply_velocity(
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
 
-    for (plat_tf, plat_size, _) in &platform_query {
+    for (plat_tf, plat_size, _, one_way, _, _, _) in &platform_query {
+        // One-way platforms have no horizontal collision
+        if one_way.is_some() { continue; }
+
         let plat_half_w = plat_size.0.x / 2.0;
         let plat_half_h = plat_size.0.y / 2.0;
 
@@ -294,8 +340,10 @@ fn apply_velocity(
 
     grounded.on_ground = false;
     let mut riding_velocity = Vec2::ZERO;
+    // Player is pressing down — used for drop-through on one-way platforms
+    let pressing_down = game_input.down_pressed || game_input.move_x < -0.8; // down key or stick down
 
-    for (plat_tf, plat_size, plat_vel) in &platform_query {
+    for (plat_tf, plat_size, plat_vel, one_way, ice, conveyor, spring) in &platform_query {
         let plat_half_w = plat_size.0.x / 2.0;
         let plat_half_h = plat_size.0.y / 2.0;
 
@@ -303,6 +351,16 @@ fn apply_velocity(
             - (transform.translation.x - plat_tf.translation.x).abs();
         let overlap_y = (player_half_h + plat_half_h)
             - (transform.translation.y - plat_tf.translation.y).abs();
+
+        // One-way platform: only collide when landing from above, skip if pressing down+jump
+        if one_way.is_some() {
+            let player_bottom = transform.translation.y - player_half_h;
+            let plat_top = plat_tf.translation.y + plat_half_h;
+            // Skip if player center is below the platform top, or pressing down
+            if player_bottom < plat_top - 4.0 || (pressing_down && game_input.jump_pressed) {
+                continue;
+            }
+        }
 
         // Use a small epsilon so the player stays grounded when sitting
         // exactly on top of a platform (overlap_y == 0.0 after snap).
@@ -313,6 +371,13 @@ fn apply_velocity(
                 if let Some(pv) = plat_vel {
                     riding_velocity = pv.0;
                 }
+                // Track special platform types
+                if ice.is_some() { standing.on_ice = true; }
+                if let Some(conv) = conveyor { standing.conveyor_speed = conv.speed; }
+                if let Some(sp) = spring {
+                    standing.on_spring = true;
+                    standing.spring_multiplier = sp.force_multiplier;
+                }
             } else if overlap_y > 0.0 && transform.translation.y > plat_tf.translation.y {
                 // Landing on top — snap to surface and carry platform velocity
                 transform.translation.y =
@@ -322,8 +387,15 @@ fn apply_velocity(
                 if let Some(pv) = plat_vel {
                     riding_velocity = pv.0;
                 }
-            } else if overlap_y > 0.0 {
-                // Bonking head on bottom
+                // Track special platform types
+                if ice.is_some() { standing.on_ice = true; }
+                if let Some(conv) = conveyor { standing.conveyor_speed = conv.speed; }
+                if let Some(sp) = spring {
+                    standing.on_spring = true;
+                    standing.spring_multiplier = sp.force_multiplier;
+                }
+            } else if overlap_y > 0.0 && one_way.is_none() {
+                // Bonking head on bottom (not on one-way platforms)
                 transform.translation.y =
                     plat_tf.translation.y - plat_half_h - player_half_h;
                 velocity.0.y = 0.0;
@@ -339,6 +411,10 @@ fn apply_velocity(
         }
         if riding_velocity.y.abs() > 0.0 {
             transform.translation.y += riding_velocity.y * dt;
+        }
+        // Apply conveyor push
+        if standing.conveyor_speed.abs() > 0.0 {
+            transform.translation.x += standing.conveyor_speed * dt;
         }
     }
 }
