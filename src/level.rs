@@ -512,19 +512,19 @@ fn generate_chunks(
         if rng.gen_bool(0.4) {
             let prev_x = tracker.rightmost_platform_x;
             let prev_y = tracker.last_platform_y;
-            let min_coin_y = prev_y.min(new_y) + PLATFORM_HEIGHT / 2.0 + COIN_SIZE;
+            let min_coin_y = prev_y.max(new_y) + PLATFORM_HEIGHT / 2.0 + COIN_SIZE;
             let pattern: u32 = rng.gen_range(0..5);
 
             match pattern {
                 0 => {
-                    // Arc of coins — parabolic path between platforms
+                    // Arc of coins — parabolic path above both platforms
                     let count = rng.gen_range(4..7);
+                    let arc_base = prev_y.max(new_y) + COIN_FLOAT_HEIGHT;
                     for i in 0..count {
                         let t = (i as f32 + 1.0) / (count as f32 + 1.0);
                         let cx = prev_x + (new_x - prev_x) * t;
-                        let base_y = prev_y + (new_y - prev_y) * t;
                         let arc_h = 80.0 * (4.0 * t * (1.0 - t));
-                        let cy = (base_y + arc_h).max(min_coin_y);
+                        let cy = (arc_base + arc_h).max(min_coin_y);
                         spawn_coin_at(&mut commands, cx, cy, game_sprites.coin.clone());
                     }
                 }

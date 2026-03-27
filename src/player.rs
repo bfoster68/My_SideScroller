@@ -196,7 +196,24 @@ fn player_input(
 
     // Jump initiation
     if can_jump && game_input.jump_pressed {
-        velocity.0.y = JUMP_FORCE;
+        let is_ground_jump = grounded.on_ground || grounded.coyote_timer > 0.0;
+
+        if is_ground_jump {
+            // First jump: full force
+            velocity.0.y = JUMP_FORCE;
+        } else {
+            // Air jump: momentum-based — stronger if used while still rising,
+            // weaker if used while falling. Rewards good timing.
+            let vy = velocity.0.y;
+            // Map current velocity to a ratio: rising = max ratio, falling fast = min ratio
+            // vy ranges roughly from JUMP_FORCE (just jumped) to -JUMP_FORCE (terminal fall)
+            let t = ((vy / JUMP_FORCE) + 1.0).clamp(0.0, 1.0) * 0.5; // 0.0 (falling) to 0.5 (peak) to 1.0 (rising)
+            let ratio = crate::constants::DOUBLE_JUMP_MIN_RATIO
+                + t * (crate::constants::DOUBLE_JUMP_MAX_RATIO - crate::constants::DOUBLE_JUMP_MIN_RATIO);
+            // Cancel downward momentum but don't boost upward momentum
+            velocity.0.y = (JUMP_FORCE * ratio).max(0.0);
+        }
+
         grounded.coyote_timer = 0.0;
         grounded.on_ground = false;
         jump_held.0 = true;
