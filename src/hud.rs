@@ -285,7 +285,7 @@ fn update_powerup_bars(
     let states: [(usize, Option<f32>); 3] = [
         (0, speed.map(|s| s.timer.fraction_remaining())),
         (1, jump.map(|j| j.timer.fraction_remaining())),
-        (2, shield.map(|s| Some(s.hits_remaining as f32 / SHIELD_HITS as f32)).unwrap_or(None)),
+        (2, shield.map(|s| s.hits_remaining as f32 / SHIELD_HITS as f32)),
     ];
 
     // Update fill bar widths
