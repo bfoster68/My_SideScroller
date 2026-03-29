@@ -815,7 +815,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         tint_color(vec3<f32>(0.06, 0.05, 0.12), dc.ambient),
         tint_color(vec3<f32>(0.04, 0.04, 0.10), dc.ambient),
         false, false,
-        true, 0.48,
+        false, 0.48,  // snow caps disabled (set to true to re-enable)
         false, false,
         0.0,
         color,
@@ -837,7 +837,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         tint_color(vec3<f32>(0.05, 0.06, 0.10), dc.ambient),
         tint_color(vec3<f32>(0.03, 0.04, 0.08), dc.ambient),
         true, false,
-        true, 0.38,
+        false, 0.38,  // snow caps disabled (set to true to re-enable)
         true, false,
         0.20,
         color,
