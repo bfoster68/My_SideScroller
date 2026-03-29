@@ -163,8 +163,10 @@ fn update_debug_text(
         String::new()
     };
 
+    let version = env!("CARGO_PKG_VERSION");
+
     let debug_text = format!(
-        "FPS: {:.0}  |  Entities: {}{}\n\
+        "v{}  |  FPS: {:.0}  |  Entities: {}{}\n\
          Pos: {}  Vel: {}\n\
          State: {}  |  HP: {}  |  Powerups: {}\n\
          Score: {}  |  Diff: {:.0}%{}\n\
@@ -172,6 +174,7 @@ fn update_debug_text(
          Enemies: {}  |  Platforms: {}  |  Proj: {}\n\
          Particles: {}  |  Gen: {:.0}  |  Gnd: {:.0}\n\
          0:God  9:Heal",
+        version,
         fps,
         entity_count,
         god,
