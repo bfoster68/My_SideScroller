@@ -23,11 +23,18 @@ use crate::sprites::GameSprites;
 // ---------------------------------------------------------------------------
 
 /// Collision tile types parsed from IntGrid layer.
+/// Values correspond to LDtk IntGrid values:
+///   1=Solid, 2=Breakable, 3=Ground, 4=OneWay, 5=Conveyor, 6=Ice, 7=Crumbling, 8=Spring
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum CollisionType {
     Solid,
     Breakable,
     Ground,
+    OneWay,
+    Conveyor,
+    Ice,
+    Crumbling,
+    Spring,
 }
 
 /// A single collision tile from the IntGrid layer.
@@ -88,6 +95,8 @@ pub struct ChunkTemplate {
     pub entry_y: f32,
     pub exit_y: f32,
     pub has_ground: bool,
+    /// Optional section affinity (0-3). None = any section.
+    pub section: Option<u32>,
     collision_tiles: Vec<CollisionTile>,
     entities: Vec<ChunkEntity>,
 }
@@ -97,6 +106,8 @@ pub struct ChunkTemplate {
 pub struct ChunkPool {
     pub templates: Vec<ChunkTemplate>,
     pub loaded: bool,
+    /// Name of the last chunk placed (to avoid back-to-back repeats).
+    pub last_placed: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +201,7 @@ fn parse_level(level: &Value, grid: f32) -> Option<ChunkTemplate> {
         Some(FieldVal::Bool(b)) => *b,
         _ => false,
     };
+    let section = fields.get("section").map(|v| v.as_i32() as u32);
 
     let layers = level.get("layerInstances").and_then(|v| v.as_array())?;
 
@@ -230,6 +242,7 @@ fn parse_level(level: &Value, grid: f32) -> Option<ChunkTemplate> {
         entry_y,
         exit_y,
         has_ground,
+        section,
         collision_tiles,
         entities,
     })
@@ -257,6 +270,11 @@ fn parse_intgrid_layer(
         let tile_type = match v {
             2 => CollisionType::Breakable,
             3 => CollisionType::Ground,
+            4 => CollisionType::OneWay,
+            5 => CollisionType::Conveyor,
+            6 => CollisionType::Ice,
+            7 => CollisionType::Crumbling,
+            8 => CollisionType::Spring,
             _ => CollisionType::Solid,
         };
         // Flip Y: LDtk is top-down, we want bottom-up
@@ -365,13 +383,15 @@ fn parse_field_instances(val: Option<&Value>) -> HashMap<String, FieldVal> {
 // Chunk selection
 // ---------------------------------------------------------------------------
 
-/// Pick a suitable chunk for the current difficulty and entry height.
-/// Returns None if no chunk fits (caller falls back to procedural).
+/// Pick a suitable chunk for the current difficulty, entry height, and section.
+/// Avoids repeating the last chunk. Returns None if no chunk fits.
 pub fn select_chunk<'a>(
     pool: &'a ChunkPool,
     difficulty: f32,
     entry_y: f32,
     max_y_delta: f32,
+    section: u32,
+    last_chunk_name: Option<&str>,
     rng: &mut impl rand::Rng,
 ) -> Option<&'a ChunkTemplate> {
     use rand::seq::SliceRandom;
@@ -381,7 +401,23 @@ pub fn select_chunk<'a>(
         .iter()
         .filter(|t| difficulty >= t.difficulty_min && difficulty <= t.difficulty_max)
         .filter(|t| (t.entry_y - entry_y).abs() <= max_y_delta * 2.0)
+        // Section filter: chunk matches if it has no section preference or matches current
+        .filter(|t| t.section.is_none() || t.section == Some(section % 4))
+        // Avoid repeating the same chunk back-to-back
+        .filter(|t| last_chunk_name.map_or(true, |last| t.name != last))
         .collect();
+
+    // If no candidates after avoiding repeat, try again without the repeat filter
+    if candidates.is_empty() {
+        let fallback: Vec<&ChunkTemplate> = pool
+            .templates
+            .iter()
+            .filter(|t| difficulty >= t.difficulty_min && difficulty <= t.difficulty_max)
+            .filter(|t| (t.entry_y - entry_y).abs() <= max_y_delta * 2.0)
+            .filter(|t| t.section.is_none() || t.section == Some(section % 4))
+            .collect();
+        return fallback.choose(rng).copied();
+    }
 
     candidates.choose(rng).copied()
 }
@@ -626,6 +662,58 @@ fn spawn_collision_runs(
                         group_counter.0 += 1;
                         spawn_breakable_platform(commands, wx, wy, num_blocks, group_counter.0);
                     }
+                }
+                CollisionType::OneWay => {
+                    let color = plat_colors[color_idx % plat_colors.len()];
+                    color_idx += 1;
+                    let ow_color = Color::srgba(
+                        color.to_srgba().red * 0.8,
+                        color.to_srgba().green * 0.8,
+                        color.to_srgba().blue * 1.2,
+                        0.7,
+                    );
+                    let e = spawn_platform(commands, wx, wy, run_width, PLATFORM_HEIGHT, ow_color, false);
+                    commands.entity(e).insert(crate::level::OneWayPlatform);
+                }
+                CollisionType::Conveyor => {
+                    // Alternate direction based on color index
+                    let direction = if color_idx % 2 == 0 { 1.0 } else { -1.0 };
+                    color_idx += 1;
+                    let conv_color = if direction > 0.0 {
+                        Color::srgb(0.5, 0.7, 0.5)
+                    } else {
+                        Color::srgb(0.7, 0.5, 0.5)
+                    };
+                    let e = spawn_platform(commands, wx, wy, run_width, PLATFORM_HEIGHT, conv_color, false);
+                    commands.entity(e).insert(crate::level::ConveyorPlatform {
+                        speed: CONVEYOR_SPEED * direction,
+                    });
+                }
+                CollisionType::Ice => {
+                    let e = spawn_platform(
+                        commands, wx, wy, run_width, PLATFORM_HEIGHT,
+                        Color::srgb(0.7, 0.85, 0.95), false,
+                    );
+                    commands.entity(e).insert(crate::level::IcePlatform);
+                }
+                CollisionType::Crumbling => {
+                    let e = spawn_platform(
+                        commands, wx, wy, run_width, PLATFORM_HEIGHT,
+                        Color::srgb(0.6, 0.5, 0.4), false,
+                    );
+                    commands.entity(e).insert(crate::level::CrumblingPlatform {
+                        state: crate::level::CrumbleState::Idle,
+                        timer: Timer::from_seconds(CRUMBLE_WARN_TIME, TimerMode::Once),
+                    });
+                }
+                CollisionType::Spring => {
+                    let e = spawn_platform(
+                        commands, wx, wy, run_width.max(80.0), PLATFORM_HEIGHT,
+                        Color::srgb(0.3, 0.8, 0.3), false,
+                    );
+                    commands.entity(e).insert(crate::level::SpringPlatform {
+                        force_multiplier: SPRING_BOUNCE_MULTIPLIER,
+                    });
                 }
             }
         }

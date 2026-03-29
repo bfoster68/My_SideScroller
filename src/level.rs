@@ -419,7 +419,7 @@ fn generate_chunks(
     game_sprites: Res<GameSprites>,
     checkpoint_data: Res<CheckpointData>,
     mut group_counter: ResMut<BreakableGroupCounter>,
-    chunk_pool: Res<crate::ldtk_chunks::ChunkPool>,
+    mut chunk_pool: ResMut<crate::ldtk_chunks::ChunkPool>,
 ) {
     let Ok(camera_tf) = camera_query.single() else {
         return;
@@ -488,16 +488,23 @@ fn generate_chunks(
         let ldtk_spacing_ok = (tracker.rightmost_platform_x - tracker.last_ldtk_chunk_x)
             > LDTK_CHUNK_MIN_SPACING;
         if chunk_pool.loaded && ldtk_spacing_ok && rng.gen_bool(LDTK_CHUNK_CHANCE) {
+            let last_name = chunk_pool.last_placed.clone();
             if let Some(template) = crate::ldtk_chunks::select_chunk(
                 &chunk_pool,
                 d,
                 tracker.last_platform_y,
                 MAX_JUMP_HEIGHT,
+                checkpoint_data.section,
+                last_name.as_deref(),
                 &mut rng,
             ) {
+                let chunk_name = template.name.clone();
+                let chunk_entry_y = template.entry_y;
+                let chunk_exit_y = template.exit_y;
+                let chunk_has_ground = template.has_ground;
+
                 let offset_x = tracker.rightmost_platform_x + min_gap;
-                // Align chunk entry_y with current platform height
-                let base_y = tracker.last_platform_y - template.entry_y;
+                let base_y = tracker.last_platform_y - chunk_entry_y;
 
                 let chunk_width = crate::ldtk_chunks::spawn_chunk(
                     &mut commands,
@@ -510,11 +517,11 @@ fn generate_chunks(
                 );
 
                 tracker.rightmost_platform_x = offset_x + chunk_width;
-                tracker.last_platform_y = base_y + template.exit_y;
+                tracker.last_platform_y = base_y + chunk_exit_y;
                 tracker.last_ldtk_chunk_x = offset_x;
+                chunk_pool.last_placed = Some(chunk_name);
 
-                // Advance ground tracker past chunk if it provides ground
-                if template.has_ground {
+                if chunk_has_ground {
                     tracker.rightmost_ground_x =
                         tracker.rightmost_ground_x.max(offset_x + chunk_width);
                 }

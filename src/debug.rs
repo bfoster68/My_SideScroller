@@ -5,7 +5,12 @@ use crate::checkpoint::CheckpointData;
 use crate::constants::MAX_HEALTH;
 use crate::enemies::{ComboTracker, Enemy, Projectile};
 use crate::health::{Health, Invincible};
-use crate::level::{ChunkTracker, Difficulty, Platform};
+use crate::level::{
+    ChunkTracker, ConveyorPlatform, CrumblingPlatform, Difficulty, IcePlatform, OneWayPlatform,
+    Platform, SpringPlatform,
+};
+use crate::breakable::BreakableBlock;
+use crate::level::PlatformSize;
 use crate::particles::Particle;
 use crate::player::{Grounded, Player, Score, Velocity};
 use crate::powerups::{SpeedBoost, TripleJump, Shield};
@@ -18,6 +23,10 @@ pub struct GodMode(pub bool);
 /// Marker for debug overlay root node.
 #[derive(Component)]
 struct DebugRoot;
+
+/// Marker for floating platform type labels in world space.
+#[derive(Component)]
+struct PlatformDebugLabel;
 
 /// Marker for the debug text element.
 #[derive(Component)]
@@ -35,7 +44,7 @@ impl Plugin for DebugPlugin {
             .add_plugins(EntityCountDiagnosticsPlugin::default())
             .init_resource::<DebugVisible>()
             .init_resource::<GodMode>()
-            .add_systems(Update, (toggle_debug_overlay, update_debug_text, debug_cheats));
+            .add_systems(Update, (toggle_debug_overlay, update_debug_text, debug_cheats, update_platform_labels));
     }
 }
 
@@ -232,6 +241,108 @@ fn debug_cheats(
             commands.entity(entity).insert(Invincible {
                 timer: Timer::from_seconds(999999.0, TimerMode::Once),
             });
+        }
+    }
+}
+
+/// Show floating labels above each platform indicating its type when debug overlay is active.
+fn update_platform_labels(
+    mut commands: Commands,
+    visible: Res<DebugVisible>,
+    label_query: Query<Entity, With<PlatformDebugLabel>>,
+    platform_query: Query<
+        (
+            &Transform,
+            &PlatformSize,
+            Option<&OneWayPlatform>,
+            Option<&ConveyorPlatform>,
+            Option<&IcePlatform>,
+            Option<&CrumblingPlatform>,
+            Option<&SpringPlatform>,
+        ),
+        With<Platform>,
+    >,
+    breakable_query: Query<&Transform, With<BreakableBlock>>,
+    camera_query: Query<&Transform, With<Camera2d>>,
+) {
+    // Always despawn old labels
+    for entity in &label_query {
+        commands.entity(entity).despawn();
+    }
+
+    if !visible.0 {
+        return;
+    }
+
+    let cam_x = camera_query
+        .single()
+        .map(|t| t.translation.x)
+        .unwrap_or(0.0);
+
+    // Label platforms within view range
+    for (tf, size, one_way, conveyor, ice, crumbling, spring) in &platform_query {
+        let px = tf.translation.x;
+        if (px - cam_x).abs() > 800.0 {
+            continue;
+        }
+
+        let label = if spring.is_some() {
+            "SPRING"
+        } else if crumbling.is_some() {
+            "CRUMBLE"
+        } else if ice.is_some() {
+            "ICE"
+        } else if conveyor.is_some() {
+            "CONV"
+        } else if one_way.is_some() {
+            "1-WAY"
+        } else {
+            "PLAT"
+        };
+
+        let label_color = if spring.is_some() {
+            Color::srgb(0.3, 1.0, 0.3)
+        } else if crumbling.is_some() {
+            Color::srgb(1.0, 0.7, 0.4)
+        } else if ice.is_some() {
+            Color::srgb(0.7, 0.9, 1.0)
+        } else if conveyor.is_some() {
+            Color::srgb(0.5, 1.0, 0.5)
+        } else if one_way.is_some() {
+            Color::srgb(0.6, 0.7, 1.0)
+        } else {
+            Color::srgba(0.5, 0.5, 0.5, 0.5)
+        };
+
+        commands.spawn((
+            PlatformDebugLabel,
+            Text2d::new(label),
+            TextFont { font_size: 14.0, ..default() },
+            TextColor(label_color),
+            Transform::from_xyz(px, tf.translation.y + size.0.y / 2.0 + 12.0, 90.0),
+        ));
+    }
+
+    // Label breakable blocks (just first few visible ones)
+    let mut break_count = 0;
+    for tf in &breakable_query {
+        if break_count > 10 {
+            break;
+        }
+        let px = tf.translation.x;
+        if (px - cam_x).abs() > 800.0 {
+            continue;
+        }
+        break_count += 1;
+        if break_count == 1 {
+            // Label only the first block in each visible cluster
+            commands.spawn((
+                PlatformDebugLabel,
+                Text2d::new("BREAK"),
+                TextFont { font_size: 14.0, ..default() },
+                TextColor(Color::srgb(1.0, 0.6, 0.2)),
+                Transform::from_xyz(px, tf.translation.y + 20.0, 90.0),
+            ));
         }
     }
 }
