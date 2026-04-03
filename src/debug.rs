@@ -36,6 +36,30 @@ struct DebugText;
 #[derive(Resource, Default)]
 struct DebugVisible(bool);
 
+/// Cached debug data to avoid rebuilding every frame.
+#[derive(Resource)]
+struct DebugCache {
+    refresh_timer: Timer,
+    last_enemy_count: usize,
+    last_platform_count: usize,
+    last_projectile_count: usize,
+    last_particle_count: usize,
+    last_text: String,
+}
+
+impl Default for DebugCache {
+    fn default() -> Self {
+        Self {
+            refresh_timer: Timer::from_seconds(0.25, TimerMode::Repeating),
+            last_enemy_count: 0,
+            last_platform_count: 0,
+            last_projectile_count: 0,
+            last_particle_count: 0,
+            last_text: String::new(),
+        }
+    }
+}
+
 pub struct DebugPlugin;
 
 impl Plugin for DebugPlugin {
@@ -44,6 +68,7 @@ impl Plugin for DebugPlugin {
             .add_plugins(EntityCountDiagnosticsPlugin::default())
             .init_resource::<DebugVisible>()
             .init_resource::<GodMode>()
+            .init_resource::<DebugCache>()
             .add_systems(Update, (toggle_debug_overlay, update_debug_text, debug_cheats, update_platform_labels));
     }
 }
@@ -93,29 +118,49 @@ fn toggle_debug_overlay(
 }
 
 /// Update debug text with comprehensive game metrics.
+/// Uses a 4Hz timer for expensive entity counts and change detection for game state.
 fn update_debug_text(
+    time: Res<Time>,
     visible: Res<DebugVisible>,
     diagnostics: Res<DiagnosticsStore>,
     mut text_query: Query<&mut Text, With<DebugText>>,
+    mut cache: ResMut<DebugCache>,
     god_mode: Res<GodMode>,
-    // Player info
     player_query: Query<
         (&Transform, &Velocity, &Grounded, &Health, Option<&Invincible>, Option<&SpeedBoost>, Option<&TripleJump>, Option<&Shield>),
         With<Player>,
     >,
-    // Game state
     difficulty: Res<Difficulty>,
     score: Res<Score>,
     checkpoint: Res<CheckpointData>,
     combo: Res<ComboTracker>,
     chunk_tracker: Res<ChunkTracker>,
-    // Entity counts (combined into fewer queries)
     platform_query: Query<(), With<Platform>>,
     enemy_query: Query<(), With<Enemy>>,
     particle_query: Query<(), With<Particle>>,
     projectile_query: Query<(), With<Projectile>>,
 ) {
     if !visible.0 {
+        return;
+    }
+
+    // Tick the refresh timer — entity counts update at 4Hz
+    let timer_fired = cache.refresh_timer.tick(time.delta()).just_finished();
+
+    // Check if any game state changed
+    let state_changed = score.is_changed() || difficulty.is_changed()
+        || combo.is_changed() || checkpoint.is_changed();
+
+    // Refresh entity counts at 4Hz (expensive iter().count() calls)
+    if timer_fired {
+        cache.last_enemy_count = enemy_query.iter().count();
+        cache.last_particle_count = particle_query.iter().count();
+        cache.last_projectile_count = projectile_query.iter().count();
+        cache.last_platform_count = platform_query.iter().count();
+    }
+
+    // Only rebuild text when something changed or timer fired
+    if !timer_fired && !state_changed {
         return;
     }
 
@@ -129,7 +174,6 @@ fn update_debug_text(
         .and_then(|d| d.value())
         .unwrap_or(0.0) as u32;
 
-    // Player state
     let (player_pos, player_vel, player_state, health_str, powerups_str) =
         if let Ok((tf, vel, grounded, health, invincible, speed, triple, shield)) = player_query.single() {
             let ground_str = if grounded.on_ground { "GND" } else { "AIR" };
@@ -150,12 +194,6 @@ fn update_debug_text(
             ("--".into(), "--".into(), "--".into(), "--".into(), "--".into())
         };
 
-    // Entity counts
-    let total_enemies = enemy_query.iter().count();
-    let particles = particle_query.iter().count();
-    let projectiles = projectile_query.iter().count();
-    let platforms = platform_query.iter().count();
-
     let god = if god_mode.0 { " [GOD]" } else { "" };
     let combo_str = if combo.count > 0 {
         format!("  Combo: {}x", 2u32.pow(combo.count.min(4)))
@@ -165,11 +203,11 @@ fn update_debug_text(
 
     let version = env!("CARGO_PKG_VERSION");
 
-    let debug_text = format!(
+    cache.last_text = format!(
         "v{}  |  FPS: {:.0}  |  Entities: {}{}\n\
          Pos: {}  Vel: {}\n\
          State: {}  |  HP: {}  |  Powerups: {}\n\
-         Score: {}  |  Diff: {:.0}%{}\n\
+         Score: {}  |  Diff: {:.1}{}\n\
          Section: {}  |  Checkpoint: {}\n\
          Enemies: {}  |  Platforms: {}  |  Proj: {}\n\
          Particles: {}  |  Gen: {:.0}  |  Gnd: {:.0}\n\
@@ -184,20 +222,20 @@ fn update_debug_text(
         health_str,
         powerups_str,
         score.value,
-        difficulty.value * 100.0,
+        difficulty.value,
         combo_str,
         checkpoint.section,
         checkpoint.last_checkpoint_score,
-        total_enemies,
-        platforms,
-        projectiles,
-        particles,
+        cache.last_enemy_count,
+        cache.last_platform_count,
+        cache.last_projectile_count,
+        cache.last_particle_count,
         chunk_tracker.rightmost_platform_x,
         chunk_tracker.rightmost_ground_x,
     );
 
     for mut text in &mut text_query {
-        **text = debug_text.clone();
+        **text = cache.last_text.clone();
     }
 }
 

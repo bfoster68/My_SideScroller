@@ -7,6 +7,7 @@ mod collectibles;
 mod constants;
 mod debug;
 mod enemies;
+mod enemy_types;
 mod hazards;
 mod health;
 mod highscore;
@@ -14,11 +15,14 @@ mod hud;
 mod input;
 mod ldtk_chunks;
 mod level;
+mod level_gen;
 mod mountain_bg;
 mod particles;
+mod platforms;
 mod player;
 mod powerups;
 mod save;
+mod spatial;
 mod sprites;
 mod state;
 mod transition;
@@ -57,6 +61,7 @@ fn main() {
         .add_plugins(collectibles::CollectiblesPlugin)
         .add_plugins(hazards::HazardsPlugin)
         .add_plugins(powerups::PowerupsPlugin)
+        .add_plugins(spatial::SpatialPlugin)
         .add_plugins(sprites::SpritesPlugin)
         .add_plugins(audio::GameAudioPlugin)
         .add_plugins(highscore::HighScorePlugin)

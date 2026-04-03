@@ -5,7 +5,9 @@ import json
 import uuid
 import copy
 
-INPUT_PATH = "/Users/williamfoster/Documents/GitHub/My_SideScroller/.claude/worktrees/nervous-leakey/assets/levels/chunks.ldtk"
+import os
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+INPUT_PATH = os.path.join(_SCRIPT_DIR, "..", "assets", "levels", "chunks.ldtk")
 OUTPUT_PATH = INPUT_PATH
 
 # Entity definition UIDs
@@ -758,6 +760,354 @@ def design_sky_bouncing():
     return make_level("sky_bouncing", 113, px_wid, 400, 0.4, 0.9, False, 3, entities, grid_to_csv(grid))
 
 
+# ============================================================
+# Extreme difficulty chunks (d > 1.0)
+# ============================================================
+
+def design_extreme_enemy_gauntlet():
+    """1200x400 - dense enemies on narrow platforms, no breathing room."""
+    w, h = 75, 25
+    grid = make_grid(w, h)
+
+    # Entry
+    set_platform(grid, 20, 1, 5)
+    # Narrow platforms with enemies everywhere
+    set_platform(grid, 18, 8, 14)
+    set_platform(grid, 15, 17, 23)
+    set_platform(grid, 18, 26, 30)
+    set_platform(grid, 12, 33, 39)
+    set_platform(grid, 16, 42, 46)
+    set_platform(grid, 13, 49, 55)
+    set_platform(grid, 18, 58, 62)
+    set_platform(grid, 15, 65, 71)
+    # Exit
+    set_platform(grid, 15, 72, 75)
+
+    entities = [
+        make_entity("EntryPoint", 16, 320),
+        make_entity("ExitPoint", 1184, 240),
+        # Enemies on every platform
+        make_entity("WalkingEnemy", 176, 288, [make_field("patrol_width", "Float", 80, 30)]),
+        make_entity("ShooterEnemy", 320, 240),
+        make_entity("ChargingEnemy", 448, 288, [make_field("patrol_width", "Float", 50, 33)]),
+        make_entity("WalkingEnemy", 576, 192, [make_field("patrol_width", "Float", 80, 30)]),
+        make_entity("ShooterEnemy", 704, 256),
+        make_entity("ChargingEnemy", 832, 208, [make_field("patrol_width", "Float", 80, 33)]),
+        make_entity("WalkingEnemy", 960, 288, [make_field("patrol_width", "Float", 50, 30)]),
+        # Flying threats in gaps
+        make_entity("FlyingRangedEnemy", 240, 120),
+        make_entity("FlyingRangedEnemy", 520, 100),
+        make_entity("FlyingEnemy", 760, 130),
+        make_entity("FlyingRangedEnemy", 1040, 110),
+        # Sparse coins as reward
+        make_entity("Coin", 320, 200),
+        make_entity("Coin", 576, 152),
+        make_entity("Coin", 832, 168),
+        make_entity("Powerup", 1072, 176),
+    ]
+
+    return make_level("extreme_enemy_gauntlet", 114, 1200, 400, 0.8, 1.5, False, None, entities, grid_to_csv(grid))
+
+
+def design_extreme_narrow_run():
+    """1600x400 - extremely narrow platforms (2-3 cells wide), big gaps."""
+    w, h = 100, 25
+    grid = make_grid(w, h)
+
+    # Entry
+    set_platform(grid, 20, 1, 5)
+    # Tiny platforms staircase
+    set_platform(grid, 18, 10, 12)   # 2 cells = 32px
+    set_platform(grid, 15, 17, 20)   # 3 cells = 48px
+    set_platform(grid, 12, 25, 27)   # 2 cells
+    set_platform(grid, 16, 33, 35)   # 2 cells
+    set_platform(grid, 10, 41, 44)   # 3 cells
+    set_platform(grid, 14, 50, 52)   # 2 cells
+    set_platform(grid, 18, 58, 60)   # 2 cells
+    set_platform(grid, 11, 66, 69)   # 3 cells
+    set_platform(grid, 15, 75, 77)   # 2 cells
+    set_platform(grid, 8, 83, 86)    # 3 cells
+    set_platform(grid, 13, 91, 93)   # 2 cells
+    # Exit
+    set_platform(grid, 13, 96, 100)
+
+    entities = [
+        make_entity("EntryPoint", 16, 320),
+        make_entity("ExitPoint", 1584, 208),
+        # Coins mark the path
+        make_entity("Coin", 176, 256),
+        make_entity("Coin", 288, 200),
+        make_entity("Coin", 416, 160),
+        make_entity("Coin", 544, 224),
+        make_entity("Coin", 672, 128),
+        make_entity("Coin", 816, 192),
+        make_entity("Coin", 944, 256),
+        make_entity("Coin", 1072, 144),
+        make_entity("Coin", 1216, 200),
+        make_entity("Coin", 1360, 96),
+        make_entity("Coin", 1472, 176),
+        # Flying enemies in the gaps
+        make_entity("FlyingEnemy", 224, 200),
+        make_entity("FlyingRangedEnemy", 480, 100),
+        make_entity("FlyingEnemy", 720, 180),
+        make_entity("FlyingRangedEnemy", 1000, 80),
+        make_entity("FlyingRangedEnemy", 1280, 120),
+    ]
+
+    return make_level("extreme_narrow_run", 115, 1600, 400, 1.0, 2.0, False, None, entities, grid_to_csv(grid))
+
+
+def design_extreme_crumble_gauntlet():
+    """1200x400 - all crumbling platforms with flying enemies."""
+    w, h = 75, 25
+    grid = make_grid(w, h)
+
+    # Entry solid
+    set_platform(grid, 18, 1, 5)
+    # All crumbling platforms (type 7)
+    set_platform(grid, 16, 8, 15, 7)
+    set_platform(grid, 13, 18, 25, 7)
+    set_platform(grid, 16, 28, 35, 7)
+    set_platform(grid, 10, 38, 45, 7)
+    set_platform(grid, 14, 48, 55, 7)
+    set_platform(grid, 17, 58, 65, 7)
+    # Exit solid
+    set_platform(grid, 17, 70, 75)
+
+    entities = [
+        make_entity("EntryPoint", 16, 288),
+        make_entity("ExitPoint", 1184, 272),
+        # Flying enemies guarding each crumbling section
+        make_entity("FlyingEnemy", 184, 200),
+        make_entity("FlyingRangedEnemy", 344, 120),
+        make_entity("FlyingEnemy", 504, 200),
+        make_entity("FlyingRangedEnemy", 664, 80),
+        make_entity("FlyingEnemy", 824, 160),
+        make_entity("FlyingRangedEnemy", 984, 120),
+        # Coins encourage speed
+        make_entity("Coin", 184, 224),
+        make_entity("Coin", 344, 176),
+        make_entity("Coin", 504, 224),
+        make_entity("Coin", 664, 128),
+        make_entity("Coin", 824, 192),
+        make_entity("Coin", 984, 232),
+        make_entity("Powerup", 664, 320),
+    ]
+
+    return make_level("extreme_crumble_gauntlet", 116, 1200, 400, 0.8, 1.5, False, None, entities, grid_to_csv(grid))
+
+
+def design_extreme_ice_shooters():
+    """1200x400 - all ice platforms with shooters and boulders, section=1."""
+    w, h = 75, 25
+    grid = make_grid(w, h)
+
+    # Entry solid
+    set_platform(grid, 18, 1, 5)
+    # Ice platforms with shooters
+    set_platform(grid, 16, 8, 18, 6)
+    set_platform(grid, 13, 21, 31, 6)
+    set_platform(grid, 16, 34, 44, 6)
+    set_platform(grid, 10, 47, 57, 6)
+    set_platform(grid, 14, 60, 70, 6)
+    # Exit solid
+    set_platform(grid, 14, 72, 75)
+
+    entities = [
+        make_entity("EntryPoint", 16, 288),
+        make_entity("ExitPoint", 1184, 224),
+        # Shooters on elevated positions
+        make_entity("ShooterEnemy", 208, 256),
+        make_entity("ShooterEnemy", 416, 208),
+        make_entity("ShooterEnemy", 624, 256),
+        make_entity("ShooterEnemy", 832, 160),
+        make_entity("ShooterEnemy", 1040, 224),
+        # Saws on ice (extra slippery danger)
+        make_entity("Saw", 160, 256, [make_field("patrol_width", "Float", 120, 34)]),
+        make_entity("Saw", 576, 256, [make_field("patrol_width", "Float", 120, 34)]),
+        # Boulder spawners
+        make_entity("BoulderSpawner", 320, 32),
+        make_entity("BoulderSpawner", 720, 32),
+        make_entity("BoulderSpawner", 1040, 32),
+        # Coins
+        make_entity("Coin", 128, 224),
+        make_entity("Coin", 336, 176),
+        make_entity("Coin", 528, 224),
+        make_entity("Coin", 736, 128),
+        make_entity("Coin", 944, 192),
+        make_entity("Powerup", 480, 168),
+    ]
+
+    return make_level("extreme_ice_shooters", 117, 1200, 400, 1.0, 2.0, False, 1, entities, grid_to_csv(grid))
+
+
+def design_extreme_mixed_hell():
+    """2000x400 - longest chunk, alternating hazard combos."""
+    w, h = 125, 25
+    grid = make_grid(w, h)
+
+    # Entry solid
+    set_platform(grid, 20, 1, 5)
+    # Section 1: Conveyor + saw combo
+    set_platform(grid, 18, 8, 20, 5)   # conveyor
+    set_platform(grid, 15, 22, 30)     # solid landing
+    # Section 2: Crumbling bridge over lava
+    set_platform(grid, 16, 33, 48, 7)  # crumbling
+    # Section 3: Ice + shooters
+    set_platform(grid, 14, 52, 65, 6)  # ice
+    # Section 4: Narrow springs with flying ranged
+    set_platform(grid, 22, 68, 71, 8)  # spring
+    set_platform(grid, 15, 73, 76)     # landing
+    set_platform(grid, 22, 78, 81, 8)  # spring
+    set_platform(grid, 10, 83, 86)     # high landing
+    # Section 5: Breakable + charging enemies
+    set_platform(grid, 16, 90, 105, 2) # breakable
+    # Final approach
+    set_platform(grid, 14, 108, 118)   # solid
+    # Exit
+    set_platform(grid, 14, 120, 125)
+
+    entities = [
+        make_entity("EntryPoint", 16, 320),
+        make_entity("ExitPoint", 1984, 224),
+        # Lava under crumbling section
+        make_entity("Lava", 648, 388, width_override=240),
+        # Section 1: Saw on conveyor
+        make_entity("Saw", 224, 288, [make_field("patrol_width", "Float", 150, 34)]),
+        make_entity("WalkingEnemy", 400, 240, [make_field("patrol_width", "Float", 100, 30)]),
+        # Section 2: Flying over crumbling
+        make_entity("FlyingRangedEnemy", 600, 100),
+        make_entity("FlyingEnemy", 700, 140),
+        # Section 3: Shooters on ice
+        make_entity("ShooterEnemy", 880, 224),
+        make_entity("ShooterEnemy", 992, 224),
+        make_entity("Spike", 936, 224),
+        # Section 4: Flying ranged guarding springs
+        make_entity("FlyingRangedEnemy", 1120, 80),
+        make_entity("FlyingRangedEnemy", 1280, 60),
+        # Section 5: Charging enemies on breakable
+        make_entity("ChargingEnemy", 1520, 256, [make_field("patrol_width", "Float", 200, 33)]),
+        make_entity("ChargingEnemy", 1648, 256, [make_field("patrol_width", "Float", 200, 33)]),
+        # Boulder spawners throughout
+        make_entity("BoulderSpawner", 400, 32),
+        make_entity("BoulderSpawner", 880, 32),
+        make_entity("BoulderSpawner", 1400, 32),
+        # Coins throughout
+        make_entity("Coin", 224, 248),
+        make_entity("Coin", 528, 224),
+        make_entity("Coin", 760, 192),
+        make_entity("Coin", 1008, 176),
+        make_entity("Coin", 1200, 128),
+        make_entity("Coin", 1480, 216),
+        make_entity("Coin", 1760, 192),
+        make_entity("Powerup", 1856, 192),
+    ]
+
+    return make_level("extreme_mixed_hell", 118, 2000, 400, 1.0, 2.0, False, None, entities, grid_to_csv(grid))
+
+
+def design_extreme_lava_sprint():
+    """1200x400 - crumbling over lava with boulder spawners, section=2."""
+    w, h = 75, 25
+    grid = make_grid(w, h)
+
+    # Entry solid
+    set_platform(grid, 16, 1, 5)
+    # Crumbling platforms over lava
+    set_platform(grid, 14, 8, 15, 7)
+    set_platform(grid, 12, 18, 23, 7)
+    set_platform(grid, 16, 26, 31)     # tiny solid safe zone
+    set_platform(grid, 13, 34, 41, 7)
+    set_platform(grid, 15, 44, 49, 7)
+    set_platform(grid, 11, 52, 59, 7)
+    set_platform(grid, 14, 62, 67, 7)
+    # Exit solid
+    set_platform(grid, 14, 70, 75)
+
+    entities = [
+        make_entity("EntryPoint", 16, 256),
+        make_entity("ExitPoint", 1184, 224),
+        # Lava everywhere below
+        make_entity("Lava", 600, 388, width_override=1100),
+        # Boulder spawners
+        make_entity("BoulderSpawner", 200, 32),
+        make_entity("BoulderSpawner", 440, 32),
+        make_entity("BoulderSpawner", 680, 32),
+        make_entity("BoulderSpawner", 920, 32),
+        # Timed traps on the solid safe zone
+        make_entity("TimedTrap", 432, 256),
+        make_entity("TimedTrap", 464, 256),
+        # Flying threats
+        make_entity("FlyingEnemy", 280, 160),
+        make_entity("FlyingRangedEnemy", 560, 100),
+        make_entity("FlyingEnemy", 840, 140),
+        # Coins
+        make_entity("Coin", 184, 192),
+        make_entity("Coin", 328, 160),
+        make_entity("Coin", 568, 176),
+        make_entity("Coin", 744, 200),
+        make_entity("Coin", 920, 144),
+        make_entity("Coin", 1048, 192),
+    ]
+
+    return make_level("extreme_lava_sprint", 119, 1200, 400, 0.8, 1.5, False, 2, entities, grid_to_csv(grid))
+
+
+def design_extreme_sky_assault():
+    """1200x400 - spring vertical gauntlet with flying ranged, section=3."""
+    w, h = 75, 25
+    grid = make_grid(w, h)
+
+    # Entry low
+    set_platform(grid, 22, 1, 5)
+    # Spring + narrow landing pattern ascending
+    set_platform(grid, 23, 8, 11, 8)    # spring
+    set_platform(grid, 17, 13, 16)       # narrow landing
+    set_platform(grid, 18, 19, 22, 8)    # spring
+    set_platform(grid, 11, 24, 27)       # narrow landing
+    set_platform(grid, 12, 30, 33, 8)    # spring
+    set_platform(grid, 5, 35, 38)        # very high narrow landing
+    # Descend with more springs
+    set_platform(grid, 6, 41, 44, 8)     # spring
+    set_platform(grid, 12, 46, 49)       # landing
+    set_platform(grid, 13, 52, 55, 8)    # spring
+    set_platform(grid, 18, 57, 60)       # landing
+    set_platform(grid, 19, 63, 66, 8)    # spring
+    set_platform(grid, 14, 68, 72)       # exit approach
+    # Exit
+    set_platform(grid, 14, 72, 75)
+
+    entities = [
+        make_entity("EntryPoint", 16, 352),
+        make_entity("ExitPoint", 1184, 224),
+        # Flying ranged at every altitude
+        make_entity("FlyingRangedEnemy", 200, 200),
+        make_entity("FlyingRangedEnemy", 352, 80),
+        make_entity("FlyingRangedEnemy", 500, 40),
+        make_entity("FlyingRangedEnemy", 660, 100),
+        make_entity("FlyingRangedEnemy", 800, 160),
+        make_entity("FlyingRangedEnemy", 960, 200),
+        # Flying enemies too
+        make_entity("FlyingEnemy", 280, 140),
+        make_entity("FlyingEnemy", 580, 60),
+        make_entity("FlyingEnemy", 880, 120),
+        # Lava at very bottom
+        make_entity("Lava", 600, 388, width_override=1100),
+        # Coins along the path
+        make_entity("Coin", 144, 304),
+        make_entity("Coin", 240, 232),
+        make_entity("Coin", 368, 136),
+        make_entity("Coin", 500, 48),
+        make_entity("Coin", 680, 56),
+        make_entity("Coin", 800, 160),
+        make_entity("Coin", 920, 248),
+        make_entity("Coin", 1056, 192),
+        make_entity("Powerup", 500, 300),
+    ]
+
+    return make_level("extreme_sky_assault", 120, 1200, 400, 1.0, 2.0, False, 3, entities, grid_to_csv(grid))
+
+
 def main():
     with open(INPUT_PATH, "r") as f:
         data = json.load(f)
@@ -831,10 +1181,13 @@ def main():
                 make_field("section", "Int", None, 43)
             )
 
-    # 4. Update nextUid to be above all our new UIDs
-    data["nextUid"] = 200
+    # 4. Remove previously generated levels (uid >= 100) to avoid duplicates
+    data["levels"] = [lvl for lvl in data["levels"] if lvl["uid"] < 100]
 
-    # 5. Generate new levels
+    # 5. Update nextUid to be above all our new UIDs
+    data["nextUid"] = 250
+
+    # 6. Generate new levels
     new_levels = [
         design_easy_stepping_stones(),
         design_easy_ground_coins(),
@@ -850,6 +1203,14 @@ def main():
         design_hard_everything(),
         design_volcanic_platforms(),
         design_sky_bouncing(),
+        # Extreme difficulty chunks (d > 1.0)
+        design_extreme_enemy_gauntlet(),
+        design_extreme_narrow_run(),
+        design_extreme_crumble_gauntlet(),
+        design_extreme_ice_shooters(),
+        design_extreme_mixed_hell(),
+        design_extreme_lava_sprint(),
+        design_extreme_sky_assault(),
     ]
 
     # Calculate worldX positions for new levels
@@ -866,7 +1227,7 @@ def main():
 
     data["levels"].extend(new_levels)
 
-    # 6. Write output
+    # 7. Write output
     with open(OUTPUT_PATH, "w") as f:
         json.dump(data, f, indent=2)
 

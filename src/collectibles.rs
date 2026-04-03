@@ -4,6 +4,7 @@ use crate::audio::AudioHandles;
 use crate::constants::*;
 use crate::level::Difficulty;
 use crate::player::{Coins, Player, PlayerMovementSet, Score};
+use crate::spatial::SpatialGrids;
 use crate::state::GameState;
 
 /// Marker for coin entities.
@@ -95,7 +96,8 @@ fn coin_animate(
 fn coin_player_collision(
     mut commands: Commands,
     player_query: Query<&Transform, With<Player>>,
-    coin_query: Query<(Entity, &GlobalTransform), With<Coin>>,
+    coin_query: Query<&GlobalTransform, With<Coin>>,
+    grids: Res<SpatialGrids>,
     mut coins: ResMut<Coins>,
     mut score: ResMut<Score>,
     difficulty: Res<Difficulty>,
@@ -108,8 +110,10 @@ fn coin_player_collision(
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
     let coin_half = COIN_SIZE / 2.0;
+    let check_radius = player_half_w + coin_half + 50.0;
 
-    for (entity, coin_gtf) in &coin_query {
+    for &(entity, _) in grids.coins.query_nearby(player_tf.translation.x, check_radius) {
+        let Ok(coin_gtf) = coin_query.get(entity) else { continue; };
         let coin_pos = coin_gtf.translation();
         let overlap_x = (player_half_w + coin_half)
             - (player_tf.translation.x - coin_pos.x).abs();
@@ -119,8 +123,15 @@ fn coin_player_collision(
         if overlap_x > 0.0 && overlap_y > 0.0 {
             commands.entity(entity).despawn();
             coins.count += 1;
-            // Coins scale in value with difficulty: 10 at d=0, up to 50 at d=1
-            let coin_value = COIN_SCORE + (difficulty.value * 40.0) as u32;
+            // Coins scale in value with difficulty: 10 at d=0, 50 at d=1, more at extreme
+            let d = difficulty.value;
+            let bonus = if d <= 1.0 {
+                d * 40.0
+            } else {
+                let t = ((d - 1.0) / 1.5).min(1.0);
+                40.0 + (EXTREME_COIN_BONUS - 40.0) * t
+            };
+            let coin_value = COIN_SCORE + bonus as u32;
             score.value = score.value.saturating_add(coin_value);
 
             // Play collect SFX

@@ -26,21 +26,40 @@ pub const GENERATE_AHEAD: f32 = 2400.0;
 pub const DESPAWN_BEHIND: f32 = 1200.0;
 pub const GROUND_SEGMENT_WIDTH: f32 = 600.0;
 
-// Difficulty scaling (score-based)
-pub const DIFFICULTY_SCORE_MAX: f32 = 5000.0;
+// Difficulty scaling (score-based, multi-phase)
+// Phase 1: 0→5000 pts = linear 0.0→1.0 (same as before)
+// Phase 2: 5000+ pts = logarithmic growth past 1.0 (never caps)
+pub const DIFFICULTY_PHASE1_SCORE: f32 = 5000.0;
+pub const DIFFICULTY_PHASE2_DIVISOR: f32 = 5000.0; // controls log growth rate
+
 pub const MIN_PLATFORM_GAP: f32 = 200.0;
 pub const MAX_PLATFORM_GAP: f32 = 420.0;
+pub const EXTREME_PLATFORM_GAP: f32 = 520.0;
 pub const MIN_ENEMY_CHANCE: f64 = 0.15;
 pub const MAX_ENEMY_CHANCE: f64 = 0.45;
+pub const EXTREME_ENEMY_CHANCE: f64 = 0.65;
 pub const MIN_SPIKE_CHANCE: f64 = 0.10;
 pub const MAX_SPIKE_CHANCE: f64 = 0.25;
+pub const EXTREME_SPIKE_CHANCE: f64 = 0.40;
 pub const MIN_GROUND_GAP_CHANCE: f64 = 0.10;
 pub const MAX_GROUND_GAP_CHANCE: f64 = 0.40;
+pub const EXTREME_GROUND_GAP_CHANCE: f64 = 0.60;
 
 // Moving platforms
 pub const MOVING_PLATFORM_CHANCE: f64 = 0.15;
 pub const MOVING_PLATFORM_SPEED: f32 = 1.5;
 pub const MOVING_PLATFORM_RANGE: f32 = 50.0;
+
+// Extreme difficulty scaling (d > 1.0)
+pub const EXTREME_ENEMY_SPEED: f32 = 140.0;
+pub const EXTREME_CRUMBLE_CHANCE: f64 = 0.18;
+pub const EXTREME_MOVING_CHANCE: f64 = 0.45;
+pub const EXTREME_BARE_CHANCE_MIN: f64 = 0.05;
+pub const EXTREME_BOULDER_CHANCE: f64 = 0.12;
+pub const EXTREME_PLATFORM_MIN_WIDTH_MULT: f32 = 0.5; // platforms shrink to 50% of base
+pub const EXTREME_PLATFORM_MAX_WIDTH_MULT: f32 = 0.5;
+pub const EXTREME_COIN_BONUS: f32 = 80.0; // coin value bonus at extreme (vs 40 at d=1)
+pub const EXTREME_POWERUP_DURATION_MULT: f32 = 0.6; // powerups last 60% as long at extreme
 
 // Jump physics constraints for reachability
 pub const MAX_JUMP_HEIGHT: f32 = 130.0;
@@ -109,9 +128,11 @@ pub const SHOOTER_WIDTH: f32 = 40.0;
 pub const SHOOTER_HEIGHT: f32 = 48.0;
 pub const SHOOTER_FIRE_INTERVAL_MAX: f32 = 2.5; // slow at low difficulty
 pub const SHOOTER_FIRE_INTERVAL_MIN: f32 = 1.2; // fast at high difficulty
+pub const SHOOTER_FIRE_INTERVAL_EXTREME: f32 = 0.7; // very fast at extreme difficulty
 pub const SHOOTER_RANGE: f32 = 600.0; // only fire when player is within range
 pub const PROJECTILE_SPEED_MIN: f32 = 160.0;
 pub const PROJECTILE_SPEED_MAX: f32 = 280.0;
+pub const PROJECTILE_SPEED_EXTREME: f32 = 380.0;
 pub const PROJECTILE_SIZE: f32 = 8.0;
 pub const PROJECTILE_DAMAGE: i32 = 1;
 pub const PROJECTILE_Z: f32 = 0.75;
@@ -233,7 +254,8 @@ pub const BLOCK_WEAR_RATE: f32 = 0.4; // wear points per second while running on
 pub const BLOCK_PARTICLE_COUNT: usize = 6;
 pub const BLOCK_HIT_PARTICLE_COUNT: usize = 3;
 pub const BREAKABLE_MIN_CHANCE: f64 = 0.10;  // 10% at difficulty 0
-pub const BREAKABLE_MAX_CHANCE: f64 = 0.45;  // 45% at max difficulty
+pub const BREAKABLE_MAX_CHANCE: f64 = 0.45;  // 45% at difficulty 1.0
+pub const BREAKABLE_EXTREME_CHANCE: f64 = 0.65; // 65% at extreme difficulty
 pub const BREAKABLE_MIN_BLOCKS: usize = 3;
 pub const BREAKABLE_MAX_BLOCKS: usize = 7;
 pub const BREAKABLE_SCORE_PER_BLOCK: u32 = 25;
