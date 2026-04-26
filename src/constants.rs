@@ -306,3 +306,28 @@ pub const LDTK_GRID_SIZE: f32 = 16.0;
 pub const GAMEPAD_DEADZONE: f32 = 0.3;
 pub const STICK_NAV_INITIAL_DELAY: f32 = 0.3;
 pub const STICK_NAV_REPEAT_DELAY: f32 = 0.15;
+
+// Touch controls (zones as [x%, y%, width%, height%] of screen)
+pub const TOUCH_BUTTON_ALPHA: f32 = 0.25;
+pub const TOUCH_BUTTON_PRESSED_ALPHA: f32 = 0.5;
+pub const TOUCH_HIDE_DELAY: f32 = 3.0;
+// Left button: bottom-left
+pub const TOUCH_LEFT_X: f32 = 0.02;
+pub const TOUCH_LEFT_Y: f32 = 0.70;
+pub const TOUCH_LEFT_W: f32 = 0.15;
+pub const TOUCH_LEFT_H: f32 = 0.25;
+// Right button: next to left
+pub const TOUCH_RIGHT_X: f32 = 0.18;
+pub const TOUCH_RIGHT_Y: f32 = 0.70;
+pub const TOUCH_RIGHT_W: f32 = 0.15;
+pub const TOUCH_RIGHT_H: f32 = 0.25;
+// Jump button: bottom-right, larger
+pub const TOUCH_JUMP_X: f32 = 0.75;
+pub const TOUCH_JUMP_Y: f32 = 0.65;
+pub const TOUCH_JUMP_W: f32 = 0.23;
+pub const TOUCH_JUMP_H: f32 = 0.30;
+// Pause button: top-right
+pub const TOUCH_PAUSE_X: f32 = 0.90;
+pub const TOUCH_PAUSE_Y: f32 = 0.02;
+pub const TOUCH_PAUSE_W: f32 = 0.08;
+pub const TOUCH_PAUSE_H: f32 = 0.08;

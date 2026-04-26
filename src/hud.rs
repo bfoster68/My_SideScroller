@@ -38,6 +38,10 @@ struct MenuItem(usize);
 #[derive(Component)]
 struct GameOverOverlay;
 
+/// Marker for game-over retry button (touch/click support).
+#[derive(Component)]
+struct GameOverRetry;
+
 /// Marker for pause overlay.
 #[derive(Component)]
 struct PauseOverlay;
@@ -326,6 +330,10 @@ fn spawn_menu_overlay(
     mut menu_sel: ResMut<MenuSelection>,
 ) {
     menu_sel.index = 0;
+    // No save/load on WASM (localStorage unreliable in iframes)
+    #[cfg(target_arch = "wasm32")]
+    let has_saves = false;
+    #[cfg(not(target_arch = "wasm32"))]
     let has_saves = !crate::save::list_slots().is_empty();
 
     commands
@@ -361,7 +369,7 @@ fn spawn_menu_overlay(
             // Spacer
             parent.spawn(Node { height: Val::Px(10.0), ..default() });
 
-            // Menu items — conditionally include Load Game
+            // Menu items — conditionally include Load Game (not on WASM)
             let mut idx = 0;
             if has_saves {
                 parent.spawn((
@@ -435,7 +443,11 @@ fn spawn_pause_overlay(mut commands: Commands) {
 
             parent.spawn(Node { height: Val::Px(10.0), ..default() });
 
-            let items = ["Resume", "Save Game", "Settings", "Quit to Menu", "Quit Game"];
+            #[cfg(not(target_arch = "wasm32"))]
+            let items: &[&str] = &["Resume", "Save Game", "Settings", "Quit to Menu", "Quit Game"];
+            #[cfg(target_arch = "wasm32")]
+            let items: &[&str] = &["Resume", "Settings", "Quit to Menu"];
+
             for (i, label) in items.iter().enumerate() {
                 parent.spawn((
                     PauseMenuItem(i),
@@ -752,7 +764,9 @@ fn spawn_game_over_overlay(
                 ));
             }
             parent.spawn((
-                Text::new("Press SPACE to Retry"),
+                GameOverRetry,
+                Button,
+                Text::new("Tap or Press SPACE to Retry"),
                 TextFont { font_size: 24.0, ..default() },
                 TextColor(Color::srgb(0.8, 0.8, 0.8)),
             ));
@@ -775,6 +789,7 @@ fn mouse_menu_interaction(
     pause_buttons: Query<(&Interaction, &PauseMenuItem), Changed<Interaction>>,
     settings_buttons: Query<(&Interaction, &SettingsItem), Changed<Interaction>>,
     save_buttons: Query<(&Interaction, &SaveMenuItem), Changed<Interaction>>,
+    retry_buttons: Query<&Interaction, (Changed<Interaction>, With<GameOverRetry>)>,
     mut menu_sel: ResMut<MenuSelection>,
     mut pause_sel: ResMut<PauseSelection>,
     mut settings_sel: ResMut<SettingsSelection>,
@@ -807,6 +822,11 @@ fn mouse_menu_interaction(
             Interaction::Pressed => { save_sel.index = item.0; game_input.confirm_pressed = true; }
             Interaction::Hovered => { save_sel.index = item.0; }
             Interaction::None => {}
+        }
+    }
+    for interaction in &retry_buttons {
+        if *interaction == Interaction::Pressed {
+            game_input.confirm_pressed = true;
         }
     }
 }

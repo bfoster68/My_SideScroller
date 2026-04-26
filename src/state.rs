@@ -157,6 +157,9 @@ fn handle_state_input(
 
     match current_state.get() {
         GameState::Menu => {
+            #[cfg(target_arch = "wasm32")]
+            let has_saves = false;
+            #[cfg(not(target_arch = "wasm32"))]
             let has_saves = !crate::save::list_slots().is_empty();
             let count = if has_saves { 4 } else { 3 }; // Load/New/Settings/Quit or New/Settings/Quit
             if game_input.up_pressed {
@@ -204,7 +207,13 @@ fn handle_state_input(
             }
         }
         GameState::Paused => {
-            let count = 5; // Resume, Save Game, Settings, Quit to Menu, Quit Game
+            // WASM: Resume, Settings, Quit to Menu (3 items)
+            // Native: Resume, Save Game, Settings, Quit to Menu, Quit Game (5 items)
+            #[cfg(target_arch = "wasm32")]
+            let count = 3;
+            #[cfg(not(target_arch = "wasm32"))]
+            let count = 5;
+
             if game_input.pause_pressed {
                 next_state.set(GameState::Playing);
             }
@@ -215,10 +224,21 @@ fn handle_state_input(
                 pause_sel.index = (pause_sel.index + 1) % count;
             }
             if game_input.confirm_pressed {
-                match pause_sel.index {
+                // Map index to action — different on WASM (no Save/Quit Game)
+                #[cfg(target_arch = "wasm32")]
+                let action = match pause_sel.index {
+                    0 => 0, // Resume
+                    1 => 2, // Settings
+                    2 => 3, // Quit to Menu
+                    _ => 99,
+                };
+                #[cfg(not(target_arch = "wasm32"))]
+                let action = pause_sel.index;
+
+                match action {
                     0 => next_state.set(GameState::Playing),
                     1 => {
-                        // Save Game
+                        // Save Game (native only)
                         commands.insert_resource(SaveMenuMode::Save);
                         save_menu_sel.index = 0;
                         save_menu_sel.confirm_delete = false;

@@ -25,6 +25,7 @@ mod save;
 mod spatial;
 mod sprites;
 mod state;
+mod touch;
 mod transition;
 
 use bevy::{prelude::*, window::WindowResolution};
@@ -44,6 +45,7 @@ fn main() {
         .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.2)))
         // Core infrastructure (order matters: save loads data, input runs in PreUpdate)
         .add_plugins(input::InputPlugin)
+        .add_plugins(touch::TouchPlugin)
         .add_plugins(save::SavePlugin)
         // Game plugins
         .add_plugins(state::StatePlugin)
