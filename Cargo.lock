@@ -3206,6 +3206,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "getrandom 0.2.17",
+ "js-sys",
  "rand 0.8.5",
  "serde",
  "serde_json",

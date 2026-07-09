@@ -3,6 +3,7 @@ use rand::Rng;
 
 use crate::audio::AudioHandles;
 use crate::constants::*;
+use crate::level::Difficulty;
 use crate::player::Player;
 use crate::state::GameState;
 
@@ -126,15 +127,25 @@ fn powerup_bob_animate(
     }
 }
 
-/// Player picks up power-ups on overlap.
+/// Player picks up power-ups on overlap. Duration scales down at high difficulty.
 fn powerup_pickup_collision(
     mut commands: Commands,
     player_query: Query<(Entity, &Transform), With<Player>>,
     powerup_query: Query<(Entity, &Transform, &PowerupKind)>,
+    difficulty: Res<Difficulty>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
     let Ok((player_entity, player_tf)) = player_query.single() else {
         return;
+    };
+
+    // At high difficulty (d > 1.3), powerup durations shrink
+    let d = difficulty.value;
+    let duration_mult = if d > 1.3 {
+        let t = ((d - 1.3) / 1.2).min(1.0);
+        1.0 - (1.0 - EXTREME_POWERUP_DURATION_MULT) * t
+    } else {
+        1.0
     };
 
     let player_half_w = PLAYER_WIDTH / 2.0;
@@ -160,13 +171,13 @@ fn powerup_pickup_collision(
             match kind {
                 PowerupKind::SpeedBoost => {
                     commands.entity(player_entity).insert(SpeedBoost {
-                        timer: Timer::from_seconds(SPEED_BOOST_DURATION, TimerMode::Once),
+                        timer: Timer::from_seconds(SPEED_BOOST_DURATION * duration_mult, TimerMode::Once),
                         multiplier: SPEED_BOOST_MULTIPLIER,
                     });
                 }
                 PowerupKind::TripleJump => {
                     commands.entity(player_entity).insert(TripleJump {
-                        timer: Timer::from_seconds(TRIPLE_JUMP_DURATION, TimerMode::Once),
+                        timer: Timer::from_seconds(TRIPLE_JUMP_DURATION * duration_mult, TimerMode::Once),
                     });
                 }
                 PowerupKind::Shield => {

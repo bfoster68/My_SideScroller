@@ -7,7 +7,8 @@ use crate::health::Health;
 use crate::highscore::{HighScore, HighScoreSet, NewHighScoreFlag};
 use crate::player::{Coins, Player, Score};
 use crate::powerups::{Shield, SpeedBoost, TripleJump};
-use crate::state::{GameState, MenuSelection, PauseSelection, SettingsSelection};
+use crate::input::GameInput;
+use crate::state::{GameState, MenuSelection, PauseSelection, SaveMenuSelection, SettingsSelection};
 
 /// Marker for the HUD root node so we can despawn it cleanly.
 #[derive(Component)]
@@ -36,6 +37,10 @@ struct MenuItem(usize);
 /// Marker for game-over overlay.
 #[derive(Component)]
 struct GameOverOverlay;
+
+/// Marker for game-over retry button (touch/click support).
+#[derive(Component)]
+struct GameOverRetry;
 
 /// Marker for pause overlay.
 #[derive(Component)]
@@ -109,7 +114,9 @@ impl Plugin for HudPlugin {
             .add_systems(Update, update_save_menu_display.run_if(in_state(GameState::SaveMenu)))
             // Game Over
             .add_systems(OnEnter(GameState::GameOver), spawn_game_over_overlay.after(HighScoreSet))
-            .add_systems(OnExit(GameState::GameOver), despawn_all::<GameOverOverlay>);
+            .add_systems(OnExit(GameState::GameOver), despawn_all::<GameOverOverlay>)
+            // Mouse interaction for all menus
+            .add_systems(Update, mouse_menu_interaction);
     }
 }
 
@@ -323,6 +330,10 @@ fn spawn_menu_overlay(
     mut menu_sel: ResMut<MenuSelection>,
 ) {
     menu_sel.index = 0;
+    // No save/load on WASM (localStorage unreliable in iframes)
+    #[cfg(target_arch = "wasm32")]
+    let has_saves = false;
+    #[cfg(not(target_arch = "wasm32"))]
     let has_saves = !crate::save::list_slots().is_empty();
 
     commands
@@ -358,11 +369,12 @@ fn spawn_menu_overlay(
             // Spacer
             parent.spawn(Node { height: Val::Px(10.0), ..default() });
 
-            // Menu items — conditionally include Load Game
+            // Menu items — conditionally include Load Game (not on WASM)
             let mut idx = 0;
             if has_saves {
                 parent.spawn((
                     MenuItem(idx),
+                    Button,
                     Text::new("Load Game"),
                     TextFont { font_size: 28.0, ..default() },
                     TextColor(COLOR_SELECTED),
@@ -374,6 +386,7 @@ fn spawn_menu_overlay(
             for label in &items {
                 parent.spawn((
                     MenuItem(idx),
+                    Button,
                     Text::new(*label),
                     TextFont { font_size: 28.0, ..default() },
                     TextColor(if idx == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
@@ -430,10 +443,15 @@ fn spawn_pause_overlay(mut commands: Commands) {
 
             parent.spawn(Node { height: Val::Px(10.0), ..default() });
 
-            let items = ["Resume", "Save Game", "Settings", "Quit to Menu", "Quit Game"];
+            #[cfg(not(target_arch = "wasm32"))]
+            let items: &[&str] = &["Resume", "Save Game", "Settings", "Quit to Menu", "Quit Game"];
+            #[cfg(target_arch = "wasm32")]
+            let items: &[&str] = &["Resume", "Settings", "Quit to Menu"];
+
             for (i, label) in items.iter().enumerate() {
                 parent.spawn((
                     PauseMenuItem(i),
+                    Button,
                     Text::new(*label),
                     TextFont { font_size: 24.0, ..default() },
                     TextColor(if i == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
@@ -508,6 +526,7 @@ fn spawn_save_menu_overlay(
                 );
                 parent.spawn((
                     SaveMenuItem(i),
+                    Button,
                     Text::new(label),
                     TextFont { font_size: 22.0, ..default() },
                     TextColor(if i == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
@@ -519,6 +538,7 @@ fn spawn_save_menu_overlay(
                 let idx = slots.len();
                 parent.spawn((
                     SaveMenuItem(idx),
+                    Button,
                     Text::new("+ New Save"),
                     TextFont { font_size: 22.0, ..default() },
                     TextColor(if idx == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
@@ -610,6 +630,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
             for (i, (label, val)) in labels.iter().enumerate() {
                 parent.spawn((
                     SettingsItem(i),
+                    Button,
                     Text::new(format!("{}: {}", label, volume_bar(*val))),
                     TextFont { font_size: 24.0, ..default() },
                     TextColor(if i == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
@@ -620,6 +641,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
             let res_label = RESOLUTION_LABELS[settings.resolution_index.min(RESOLUTION_LABELS.len() - 1)];
             parent.spawn((
                 SettingsItem(3),
+                Button,
                 Text::new(format!("Resolution: {}", res_label)),
                 TextFont { font_size: 24.0, ..default() },
                 TextColor(COLOR_UNSELECTED),
@@ -628,6 +650,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
             // Fullscreen
             parent.spawn((
                 SettingsItem(4),
+                Button,
                 Text::new(format!("Fullscreen: {}", if settings.fullscreen { "ON" } else { "OFF" })),
                 TextFont { font_size: 24.0, ..default() },
                 TextColor(COLOR_UNSELECTED),
@@ -636,6 +659,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
             // Back option
             parent.spawn((
                 SettingsItem(5),
+                Button,
                 Text::new("Back"),
                 TextFont { font_size: 24.0, ..default() },
                 TextColor(COLOR_UNSELECTED),
@@ -740,7 +764,9 @@ fn spawn_game_over_overlay(
                 ));
             }
             parent.spawn((
-                Text::new("Press SPACE to Retry"),
+                GameOverRetry,
+                Button,
+                Text::new("Tap or Press SPACE to Retry"),
                 TextFont { font_size: 24.0, ..default() },
                 TextColor(Color::srgb(0.8, 0.8, 0.8)),
             ));
@@ -750,6 +776,60 @@ fn spawn_game_over_overlay(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Mouse Interaction
+// ---------------------------------------------------------------------------
+
+/// Detect mouse hover and click on menu items via Bevy's Interaction component.
+/// Hover updates the selection index; click sets confirm_pressed on GameInput
+/// so the existing handle_state_input logic processes the action.
+fn mouse_menu_interaction(
+    menu_buttons: Query<(&Interaction, &MenuItem), Changed<Interaction>>,
+    pause_buttons: Query<(&Interaction, &PauseMenuItem), Changed<Interaction>>,
+    settings_buttons: Query<(&Interaction, &SettingsItem), Changed<Interaction>>,
+    save_buttons: Query<(&Interaction, &SaveMenuItem), Changed<Interaction>>,
+    retry_buttons: Query<&Interaction, (Changed<Interaction>, With<GameOverRetry>)>,
+    mut menu_sel: ResMut<MenuSelection>,
+    mut pause_sel: ResMut<PauseSelection>,
+    mut settings_sel: ResMut<SettingsSelection>,
+    mut save_sel: ResMut<SaveMenuSelection>,
+    mut game_input: ResMut<GameInput>,
+) {
+    for (interaction, item) in &menu_buttons {
+        match *interaction {
+            Interaction::Pressed => { menu_sel.index = item.0; game_input.confirm_pressed = true; }
+            Interaction::Hovered => { menu_sel.index = item.0; }
+            Interaction::None => {}
+        }
+    }
+    for (interaction, item) in &pause_buttons {
+        match *interaction {
+            Interaction::Pressed => { pause_sel.index = item.0; game_input.confirm_pressed = true; }
+            Interaction::Hovered => { pause_sel.index = item.0; }
+            Interaction::None => {}
+        }
+    }
+    for (interaction, item) in &settings_buttons {
+        match *interaction {
+            Interaction::Pressed => { settings_sel.index = item.0; game_input.confirm_pressed = true; }
+            Interaction::Hovered => { settings_sel.index = item.0; }
+            Interaction::None => {}
+        }
+    }
+    for (interaction, item) in &save_buttons {
+        match *interaction {
+            Interaction::Pressed => { save_sel.index = item.0; game_input.confirm_pressed = true; }
+            Interaction::Hovered => { save_sel.index = item.0; }
+            Interaction::None => {}
+        }
+    }
+    for interaction in &retry_buttons {
+        if *interaction == Interaction::Pressed {
+            game_input.confirm_pressed = true;
+        }
+    }
+}
 
 fn despawn_all<T: Component>(mut commands: Commands, query: Query<Entity, With<T>>) {
     for entity in &query {

@@ -66,16 +66,27 @@ pub struct MountainBgPlugin;
 
 impl Plugin for MountainBgPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<MountainParams>()
-            .add_plugins(ExtractResourcePlugin::<MountainParams>::default())
-            .add_plugins(ExtractResourcePlugin::<MountainImage>::default())
-            .add_plugins(MountainComputePlugin)
-            .add_systems(Startup, setup_mountain_bg)
-            .add_systems(
-                Update,
-                (update_mountain_params, follow_camera)
-                    .run_if(in_state(GameState::Playing)),
-            );
+        // Compute shaders (storage textures) are not supported on WebGL2.
+        // Skip the GPU background entirely on WASM — the game uses the
+        // ClearColor as fallback.
+        #[cfg(target_arch = "wasm32")]
+        {
+            return;
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            app.init_resource::<MountainParams>()
+                .add_plugins(ExtractResourcePlugin::<MountainParams>::default())
+                .add_plugins(ExtractResourcePlugin::<MountainImage>::default())
+                .add_plugins(MountainComputePlugin)
+                .add_systems(Startup, setup_mountain_bg)
+                .add_systems(
+                    Update,
+                    (update_mountain_params, follow_camera)
+                        .run_if(in_state(GameState::Playing)),
+                );
+        }
     }
 }
 

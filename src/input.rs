@@ -46,13 +46,17 @@ impl Default for StickNavTimer {
     }
 }
 
+/// System set for input processing — touch systems run before this.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct InputSet;
+
 pub struct InputPlugin;
 
 impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GameInput>()
             .init_resource::<StickNavTimer>()
-            .add_systems(PreUpdate, update_game_input);
+            .add_systems(PreUpdate, update_game_input.in_set(InputSet));
     }
 }
 
@@ -62,6 +66,7 @@ fn update_game_input(
     gamepads: Query<&Gamepad>,
     time: Res<Time>,
     mut stick_nav: ResMut<StickNavTimer>,
+    touch_state: Res<crate::touch::TouchZoneState>,
 ) {
     // Reset all fields
     *input = GameInput::default();
@@ -180,6 +185,19 @@ fn update_game_input(
             stick_nav.right_active = false;
         }
     }
+
+    // --- Touch ---
+    if touch_state.left_held {
+        input.move_x -= 1.0;
+    }
+    if touch_state.right_held {
+        input.move_x += 1.0;
+    }
+    input.jump_pressed |= touch_state.jump_pressed;
+    input.jump_released |= touch_state.jump_released;
+    input.jump_held |= touch_state.jump_held;
+    input.pause_pressed |= touch_state.pause_pressed;
+    input.confirm_pressed |= touch_state.jump_pressed;
 
     input.move_x = input.move_x.clamp(-1.0, 1.0);
 }

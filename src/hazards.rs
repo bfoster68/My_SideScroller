@@ -4,6 +4,7 @@ use crate::audio::AudioHandles;
 use crate::constants::*;
 use crate::health::{DamageEvent, Invincible};
 use crate::player::{Player, PlayerMovementSet};
+use crate::spatial::SpatialGrids;
 use crate::state::GameState;
 
 /// Marker for spike hazard entities.
@@ -349,7 +350,8 @@ fn boulder_movement(
 fn boulder_player_collision(
     mut commands: Commands,
     player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
-    boulder_query: Query<(Entity, &Transform), With<FallingBoulder>>,
+    boulder_query: Query<&Transform, With<FallingBoulder>>,
+    grids: Res<SpatialGrids>,
     mut damage_events: MessageWriter<DamageEvent>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
@@ -359,8 +361,10 @@ fn boulder_player_collision(
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
     let boulder_half = BOULDER_SIZE / 2.0;
+    let check_radius = player_half_w + boulder_half + 50.0;
 
-    for (entity, boulder_tf) in &boulder_query {
+    for &(entity, _) in grids.hazards.query_nearby(player_tf.translation.x, check_radius) {
+        let Ok(boulder_tf) = boulder_query.get(entity) else { continue; };
         let overlap_x = (player_half_w + boulder_half)
             - (player_tf.translation.x - boulder_tf.translation.x).abs();
         let overlap_y = (player_half_h + boulder_half)
@@ -460,6 +464,7 @@ fn timed_trap_player_collision(
     mut commands: Commands,
     player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
     trap_query: Query<(&GlobalTransform, &TimedTrap)>,
+    grids: Res<SpatialGrids>,
     mut damage_events: MessageWriter<DamageEvent>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
@@ -470,8 +475,10 @@ fn timed_trap_player_collision(
     let player_half_h = PLAYER_HEIGHT / 2.0;
     let spike_half_w = SPIKE_WIDTH / 2.0;
     let spike_half_h = SPIKE_HEIGHT / 2.0;
+    let check_radius = player_half_w + spike_half_w + 50.0;
 
-    for (trap_gtf, trap) in &trap_query {
+    for &(entity, _) in grids.hazards.query_nearby(player_tf.translation.x, check_radius) {
+        let Ok((trap_gtf, trap)) = trap_query.get(entity) else { continue; };
         if !trap.active { continue; }
 
         let pos = trap_gtf.translation();
@@ -502,6 +509,7 @@ fn spike_player_collision(
     mut commands: Commands,
     player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
     spike_query: Query<&GlobalTransform, With<Spike>>,
+    grids: Res<SpatialGrids>,
     mut damage_events: MessageWriter<DamageEvent>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
@@ -512,8 +520,10 @@ fn spike_player_collision(
     let player_half_h = PLAYER_HEIGHT / 2.0;
     let spike_half_w = SPIKE_WIDTH / 2.0;
     let spike_half_h = SPIKE_HEIGHT / 2.0;
+    let check_radius = player_half_w + spike_half_w + 50.0;
 
-    for spike_gtf in &spike_query {
+    for &(entity, _) in grids.hazards.query_nearby(player_tf.translation.x, check_radius) {
+        let Ok(spike_gtf) = spike_query.get(entity) else { continue; };
         let spike_pos = spike_gtf.translation();
         let overlap_x = (player_half_w + spike_half_w)
             - (player_tf.translation.x - spike_pos.x).abs();
@@ -538,6 +548,7 @@ fn saw_player_collision(
     mut commands: Commands,
     player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
     saw_query: Query<&GlobalTransform, With<Saw>>,
+    grids: Res<SpatialGrids>,
     mut damage_events: MessageWriter<DamageEvent>,
     audio_handles: Option<Res<AudioHandles>>,
 ) {
@@ -547,8 +558,10 @@ fn saw_player_collision(
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
     let saw_half = SAW_SIZE / 2.0;
+    let check_radius = player_half_w + saw_half + 50.0;
 
-    for saw_gtf in &saw_query {
+    for &(entity, _) in grids.hazards.query_nearby(player_tf.translation.x, check_radius) {
+        let Ok(saw_gtf) = saw_query.get(entity) else { continue; };
         let saw_pos = saw_gtf.translation();
         let overlap_x =
             (player_half_w + saw_half) - (player_tf.translation.x - saw_pos.x).abs();
@@ -572,6 +585,7 @@ fn saw_player_collision(
 fn lava_player_collision(
     player_query: Query<(&Transform, Option<&Invincible>, Option<&crate::health::DeathTimer>), With<Player>>,
     lava_query: Query<(&Transform, &LavaHitbox), (With<Lava>, Without<Player>)>,
+    grids: Res<SpatialGrids>,
     mut damage_events: MessageWriter<DamageEvent>,
 ) {
     let Ok((player_tf, invincible, death)) = player_query.single() else { return };
@@ -579,8 +593,11 @@ fn lava_player_collision(
 
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
+    // Lava can be very wide, use generous radius
+    let check_radius = player_half_w + 400.0;
 
-    for (lava_tf, hitbox) in &lava_query {
+    for &(entity, _) in grids.hazards.query_nearby(player_tf.translation.x, check_radius) {
+        let Ok((lava_tf, hitbox)) = lava_query.get(entity) else { continue; };
         let lava_half_w = hitbox.size.x / 2.0;
         let lava_half_h = hitbox.size.y / 2.0;
         // Hitbox center is shifted downward from sprite center
