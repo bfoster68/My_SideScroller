@@ -155,19 +155,19 @@ fn spawn_hud(mut commands: Commands) {
                 row.spawn((
                     HealthText,
                     Text::new("Health: 3"),
-                    TextFont { font_size: 24.0, ..default() },
+                    TextFont { font_size: FontSize::Px(24.0), ..default() },
                     TextColor(Color::srgb(1.0, 0.3, 0.3)),
                 ));
                 row.spawn((
                     ScoreText,
                     Text::new("Score: 0"),
-                    TextFont { font_size: 24.0, ..default() },
+                    TextFont { font_size: FontSize::Px(24.0), ..default() },
                     TextColor(Color::srgb(1.0, 1.0, 1.0)),
                 ));
                 row.spawn((
                     CoinsText,
                     Text::new("Coins: 0"),
-                    TextFont { font_size: 24.0, ..default() },
+                    TextFont { font_size: FontSize::Px(24.0), ..default() },
                     TextColor(Color::srgb(1.0, 0.85, 0.0)),
                 ));
             });
@@ -176,7 +176,7 @@ fn spawn_hud(mut commands: Commands) {
             parent.spawn((
                 ComboText,
                 Text::new(""),
-                TextFont { font_size: 28.0, ..default() },
+                TextFont { font_size: FontSize::Px(28.0), ..default() },
                 TextColor(Color::srgb(1.0, 0.9, 0.2)),
                 Node {
                     align_self: AlignSelf::Center,
@@ -211,7 +211,7 @@ fn spawn_hud(mut commands: Commands) {
                         slot.spawn((
                             PowerupBarLabel(idx),
                             Text::new(label),
-                            TextFont { font_size: 11.0, ..default() },
+                            TextFont { font_size: FontSize::Px(11.0), ..default() },
                             TextColor(color),
                         ));
                         // Bar background
@@ -354,14 +354,14 @@ fn spawn_menu_overlay(
             // Title
             parent.spawn((
                 Text::new("My Side-Scroller"),
-                TextFont { font_size: 48.0, ..default() },
+                TextFont { font_size: FontSize::Px(48.0), ..default() },
                 TextColor(COLOR_TITLE),
             ));
 
             if high_score.value > 0 {
                 parent.spawn((
                     Text::new(format!("High Score: {}", high_score.value)),
-                    TextFont { font_size: 28.0, ..default() },
+                    TextFont { font_size: FontSize::Px(28.0), ..default() },
                     TextColor(Color::srgb(1.0, 0.85, 0.0)),
                 ));
             }
@@ -376,7 +376,7 @@ fn spawn_menu_overlay(
                     MenuItem(idx),
                     Button,
                     Text::new("Load Game"),
-                    TextFont { font_size: 28.0, ..default() },
+                    TextFont { font_size: FontSize::Px(28.0), ..default() },
                     TextColor(COLOR_SELECTED),
                 ));
                 idx += 1;
@@ -388,7 +388,7 @@ fn spawn_menu_overlay(
                     MenuItem(idx),
                     Button,
                     Text::new(*label),
-                    TextFont { font_size: 28.0, ..default() },
+                    TextFont { font_size: FontSize::Px(28.0), ..default() },
                     TextColor(if idx == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
                 ));
                 idx += 1;
@@ -400,7 +400,7 @@ fn spawn_menu_overlay(
             // Controls hint
             parent.spawn((
                 Text::new("A/D: Move  |  Space: Jump  |  ESC: Pause"),
-                TextFont { font_size: 16.0, ..default() },
+                TextFont { font_size: FontSize::Px(16.0), ..default() },
                 TextColor(Color::srgb(0.4, 0.4, 0.4)),
             ));
         });
@@ -437,7 +437,7 @@ fn spawn_pause_overlay(mut commands: Commands) {
         .with_children(|parent| {
             parent.spawn((
                 Text::new("PAUSED"),
-                TextFont { font_size: 48.0, ..default() },
+                TextFont { font_size: FontSize::Px(48.0), ..default() },
                 TextColor(Color::srgb(1.0, 1.0, 1.0)),
             ));
 
@@ -453,7 +453,7 @@ fn spawn_pause_overlay(mut commands: Commands) {
                     PauseMenuItem(i),
                     Button,
                     Text::new(*label),
-                    TextFont { font_size: 24.0, ..default() },
+                    TextFont { font_size: FontSize::Px(24.0), ..default() },
                     TextColor(if i == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
                 ));
             }
@@ -502,7 +502,7 @@ fn spawn_save_menu_overlay(
         .with_children(|parent| {
             parent.spawn((
                 Text::new(title),
-                TextFont { font_size: 40.0, ..default() },
+                TextFont { font_size: FontSize::Px(40.0), ..default() },
                 TextColor(COLOR_TITLE),
             ));
 
@@ -511,7 +511,7 @@ fn spawn_save_menu_overlay(
             if slots.is_empty() && mode == crate::state::SaveMenuMode::Load {
                 parent.spawn((
                     Text::new("No saves found"),
-                    TextFont { font_size: 22.0, ..default() },
+                    TextFont { font_size: FontSize::Px(22.0), ..default() },
                     TextColor(Color::srgb(0.5, 0.5, 0.5)),
                 ));
             }
@@ -528,7 +528,7 @@ fn spawn_save_menu_overlay(
                     SaveMenuItem(i),
                     Button,
                     Text::new(label),
-                    TextFont { font_size: 22.0, ..default() },
+                    TextFont { font_size: FontSize::Px(22.0), ..default() },
                     TextColor(if i == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
                 ));
             }
@@ -540,7 +540,7 @@ fn spawn_save_menu_overlay(
                     SaveMenuItem(idx),
                     Button,
                     Text::new("+ New Save"),
-                    TextFont { font_size: 22.0, ..default() },
+                    TextFont { font_size: FontSize::Px(22.0), ..default() },
                     TextColor(if idx == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
                 ));
             }
@@ -553,7 +553,7 @@ fn spawn_save_menu_overlay(
             };
             parent.spawn((
                 Text::new(hint),
-                TextFont { font_size: 16.0, ..default() },
+                TextFont { font_size: FontSize::Px(16.0), ..default() },
                 TextColor(Color::srgb(0.4, 0.4, 0.4)),
             ));
         });
@@ -615,7 +615,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
         .with_children(|parent| {
             parent.spawn((
                 Text::new("SETTINGS"),
-                TextFont { font_size: 48.0, ..default() },
+                TextFont { font_size: FontSize::Px(48.0), ..default() },
                 TextColor(COLOR_TITLE),
             ));
 
@@ -632,7 +632,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
                     SettingsItem(i),
                     Button,
                     Text::new(format!("{}: {}", label, volume_bar(*val))),
-                    TextFont { font_size: 24.0, ..default() },
+                    TextFont { font_size: FontSize::Px(24.0), ..default() },
                     TextColor(if i == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
                 ));
             }
@@ -643,7 +643,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
                 SettingsItem(3),
                 Button,
                 Text::new(format!("Resolution: {}", res_label)),
-                TextFont { font_size: 24.0, ..default() },
+                TextFont { font_size: FontSize::Px(24.0), ..default() },
                 TextColor(COLOR_UNSELECTED),
             ));
 
@@ -652,7 +652,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
                 SettingsItem(4),
                 Button,
                 Text::new(format!("Fullscreen: {}", if settings.fullscreen { "ON" } else { "OFF" })),
-                TextFont { font_size: 24.0, ..default() },
+                TextFont { font_size: FontSize::Px(24.0), ..default() },
                 TextColor(COLOR_UNSELECTED),
             ));
 
@@ -661,7 +661,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
                 SettingsItem(5),
                 Button,
                 Text::new("Back"),
-                TextFont { font_size: 24.0, ..default() },
+                TextFont { font_size: FontSize::Px(24.0), ..default() },
                 TextColor(COLOR_UNSELECTED),
             ));
 
@@ -669,7 +669,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
 
             parent.spawn((
                 Text::new("Up/Down: Select  |  Left/Right: Adjust  |  ESC: Back"),
-                TextFont { font_size: 16.0, ..default() },
+                TextFont { font_size: FontSize::Px(16.0), ..default() },
                 TextColor(Color::srgb(0.4, 0.4, 0.4)),
             ));
         });
@@ -743,23 +743,23 @@ fn spawn_game_over_overlay(
         .with_children(|parent| {
             parent.spawn((
                 Text::new("GAME OVER"),
-                TextFont { font_size: 48.0, ..default() },
+                TextFont { font_size: FontSize::Px(48.0), ..default() },
                 TextColor(Color::srgb(1.0, 0.2, 0.2)),
             ));
             parent.spawn((
                 Text::new(format!("Score: {}", score.value)),
-                TextFont { font_size: 28.0, ..default() },
+                TextFont { font_size: FontSize::Px(28.0), ..default() },
                 TextColor(Color::srgb(1.0, 1.0, 1.0)),
             ));
             parent.spawn((
                 Text::new(format!("High Score: {}", high_score.value)),
-                TextFont { font_size: 24.0, ..default() },
+                TextFont { font_size: FontSize::Px(24.0), ..default() },
                 TextColor(Color::srgb(1.0, 0.85, 0.0)),
             ));
             if new_high_score.is_some() {
                 parent.spawn((
                     Text::new("NEW HIGH SCORE!"),
-                    TextFont { font_size: 32.0, ..default() },
+                    TextFont { font_size: FontSize::Px(32.0), ..default() },
                     TextColor(Color::srgb(1.0, 1.0, 0.0)),
                 ));
             }
@@ -767,7 +767,7 @@ fn spawn_game_over_overlay(
                 GameOverRetry,
                 Button,
                 Text::new("Tap or Press SPACE to Retry"),
-                TextFont { font_size: 24.0, ..default() },
+                TextFont { font_size: FontSize::Px(24.0), ..default() },
                 TextColor(Color::srgb(0.8, 0.8, 0.8)),
             ));
         });

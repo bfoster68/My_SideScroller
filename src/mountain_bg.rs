@@ -1,298 +1,131 @@
-//! GPU-driven parallax mountain background using a compute shader.
+//! Simple CPU-driven parallax mountain background.
 //!
-//! Replaces the old sprite-based parallax with a single fullscreen texture
-//! written by `assets/shaders/mountain_bg.wgsl` every frame. The shader
-//! receives the game camera's X position so the hills scroll at different
-//! parallax rates, plus elapsed time for the day/night cycle.
+//! Replaces the old GPU compute-shader background (which relied on Bevy's
+//! render-graph API, removed in Bevy 0.19). Each layer is a row of tall
+//! colored sprites whose jagged tops form a rolling-hill silhouette. Layers
+//! scroll horizontally at different fractional rates for a parallax effect and
+//! wrap infinitely around the camera. Works on all platforms (native + WASM);
+//! the dynamic sky color is still driven by `ClearColor` in `checkpoint.rs`.
 
-use std::borrow::Cow;
+use bevy::prelude::*;
 
-use bevy::{
-    asset::RenderAssetUsages,
-    prelude::*,
-    render::{
-        extract_resource::{ExtractResource, ExtractResourcePlugin},
-        render_asset::RenderAssets,
-        render_graph::{self, RenderGraph, RenderLabel},
-        render_resource::{
-            binding_types::{texture_storage_2d, uniform_buffer},
-            *,
-        },
-        renderer::{RenderContext, RenderDevice, RenderQueue},
-        texture::GpuImage,
-        Render, RenderApp, RenderStartup, RenderSystems,
-    },
-};
-
-use crate::player::Player;
-use crate::state::GameState;
-
-/// Marker for the background sprite so we can move it with the camera.
-#[derive(Component)]
-struct MountainBgSprite;
-
-const BG_WIDTH: u32 = 1280;
-const BG_HEIGHT: u32 = 720;
-const WORKGROUP_SIZE: u32 = 16;
-
-/// Z depth for the background sprite — behind everything else.
+/// Z depth for the background — behind everything else.
 const BG_Z: f32 = -50.0;
 
-// ---------------------------------------------------------------------------
-// Main-world resources
-// ---------------------------------------------------------------------------
-
-/// Uniform data sent to the GPU each frame. Layout must match the shader's
-/// `Params` struct exactly (std140 alignment).
-#[derive(Resource, Clone, ExtractResource, ShaderType, Default)]
-struct MountainParams {
-    camera_x: f32,
-    camera_y: f32,
-    time: f32,
-    resolution_x: f32,
-    resolution_y: f32,
-    _padding: Vec3,
+/// Per-tile parallax data used to reposition the sprite each frame.
+#[derive(Component)]
+struct ParallaxTile {
+    /// Scroll rate relative to the camera (0 = distant/slow, 1 = locked on).
+    factor: f32,
+    /// Horizontal distance between adjacent tiles in this layer.
+    spacing: f32,
+    /// Number of tiles in this layer (for infinite wrap).
+    count: u32,
+    /// This tile's index within its layer.
+    index: u32,
+    /// Vertical offset from the camera center (includes per-tile jitter).
+    base_y: f32,
 }
 
-/// Handle to the storage texture the compute shader writes to.
-#[derive(Resource, Clone, ExtractResource)]
-struct MountainImage(Handle<Image>);
+/// Static description of one parallax layer.
+struct LayerCfg {
+    factor: f32,
+    spacing: f32,
+    count: u32,
+    center_y: f32,
+    height: f32,
+    z: f32,
+    color: Color,
+}
 
-// ---------------------------------------------------------------------------
-// Plugin
-// ---------------------------------------------------------------------------
+/// Far → near. Distant layers are hazier/bluer and scroll slower.
+const LAYERS: &[LayerCfg] = &[
+    LayerCfg {
+        factor: 0.10,
+        spacing: 400.0,
+        count: 6,
+        center_y: -230.0,
+        height: 420.0,
+        z: BG_Z,
+        color: Color::srgb(0.30, 0.35, 0.48),
+    },
+    LayerCfg {
+        factor: 0.22,
+        spacing: 340.0,
+        count: 7,
+        center_y: -270.0,
+        height: 420.0,
+        z: BG_Z + 1.0,
+        color: Color::srgb(0.22, 0.29, 0.38),
+    },
+    LayerCfg {
+        factor: 0.40,
+        spacing: 280.0,
+        count: 8,
+        center_y: -300.0,
+        height: 420.0,
+        z: BG_Z + 2.0,
+        color: Color::srgb(0.15, 0.21, 0.27),
+    },
+];
 
 pub struct MountainBgPlugin;
 
 impl Plugin for MountainBgPlugin {
     fn build(&self, app: &mut App) {
-        // Compute shaders (storage textures) are not supported on WebGL2.
-        // Skip the GPU background entirely on WASM — the game uses the
-        // ClearColor as fallback.
-        #[cfg(target_arch = "wasm32")]
-        {
-            return;
-        }
+        app.add_systems(Startup, setup_mountain_bg)
+            .add_systems(Update, update_parallax);
+    }
+}
 
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            app.init_resource::<MountainParams>()
-                .add_plugins(ExtractResourcePlugin::<MountainParams>::default())
-                .add_plugins(ExtractResourcePlugin::<MountainImage>::default())
-                .add_plugins(MountainComputePlugin)
-                .add_systems(Startup, setup_mountain_bg)
-                .add_systems(
-                    Update,
-                    (update_mountain_params, follow_camera)
-                        .run_if(in_state(GameState::Playing)),
-                );
+/// Deterministic per-tile vertical jitter so the silhouette isn't uniform.
+fn tile_jitter(index: u32) -> f32 {
+    // Cheap hash → [-40, 40]
+    let h = (index.wrapping_mul(2654435761) >> 16) % 100;
+    (h as f32 / 100.0 - 0.5) * 80.0
+}
+
+fn setup_mountain_bg(mut commands: Commands) {
+    for layer in LAYERS {
+        for index in 0..layer.count {
+            let base_y = layer.center_y + tile_jitter(index);
+            commands.spawn((
+                Sprite::from_color(
+                    layer.color,
+                    // Slight overlap avoids seams between adjacent tiles.
+                    Vec2::new(layer.spacing + 2.0, layer.height),
+                ),
+                Transform::from_xyz(0.0, base_y, layer.z),
+                ParallaxTile {
+                    factor: layer.factor,
+                    spacing: layer.spacing,
+                    count: layer.count,
+                    index,
+                    base_y,
+                },
+            ));
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Setup
-// ---------------------------------------------------------------------------
-
-fn setup_mountain_bg(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
-    let mut image = Image::new_fill(
-        Extent3d {
-            width: BG_WIDTH,
-            height: BG_HEIGHT,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        &[0, 0, 0, 255],
-        TextureFormat::Rgba8Unorm,
-        RenderAssetUsages::RENDER_WORLD,
-    );
-    image.texture_descriptor.usage =
-        TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
-
-    let image_handle = images.add(image);
-
-    // Fullscreen sprite behind all gameplay.
-    commands.spawn((
-        Sprite {
-            image: image_handle.clone(),
-            custom_size: Some(Vec2::new(BG_WIDTH as f32, BG_HEIGHT as f32)),
-            ..default()
-        },
-        Transform::from_xyz(0.0, 0.0, BG_Z),
-        MountainBgSprite,
-    ));
-
-    commands.insert_resource(MountainImage(image_handle));
-}
-
-// ---------------------------------------------------------------------------
-// Per-frame param update
-// ---------------------------------------------------------------------------
-
-/// Feed the game camera position and elapsed time into MountainParams so the
-/// shader knows where to render.
-fn update_mountain_params(
-    mut params: ResMut<MountainParams>,
-    camera_query: Query<&Transform, (With<Camera2d>, Without<Player>)>,
-    time: Res<Time>,
+/// Reposition each tile around the camera every frame: scroll at the layer's
+/// parallax rate and wrap infinitely so the hills always fill the view.
+fn update_parallax(
+    camera_query: Query<&Transform, (With<Camera2d>, Without<ParallaxTile>)>,
+    mut tiles: Query<(&mut Transform, &ParallaxTile)>,
 ) {
     let Ok(cam_tf) = camera_query.single() else {
         return;
     };
+    let cam_x = cam_tf.translation.x;
+    let cam_y = cam_tf.translation.y;
 
-    params.camera_x = cam_tf.translation.x;
-    params.camera_y = cam_tf.translation.y;
-    params.time = time.elapsed_secs();
-    params.resolution_x = BG_WIDTH as f32;
-    params.resolution_y = BG_HEIGHT as f32;
-}
-
-/// Keep the background sprite centered on the camera so it always fills the
-/// viewport regardless of where the player is.
-fn follow_camera(
-    camera_query: Query<&Transform, (With<Camera2d>, Without<MountainBgSprite>)>,
-    mut bg_query: Query<&mut Transform, (With<MountainBgSprite>, Without<Camera2d>)>,
-) {
-    let Ok(cam_tf) = camera_query.single() else { return };
-    let Ok(mut bg_tf) = bg_query.single_mut() else { return };
-    bg_tf.translation.x = cam_tf.translation.x;
-    bg_tf.translation.y = cam_tf.translation.y;
-}
-
-// ---------------------------------------------------------------------------
-// Render-world plugin (compute pipeline)
-// ---------------------------------------------------------------------------
-
-struct MountainComputePlugin;
-
-#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-struct MountainComputeLabel;
-
-impl Plugin for MountainComputePlugin {
-    fn build(&self, app: &mut App) {
-        let render_app = app.sub_app_mut(RenderApp);
-        render_app
-            .add_systems(RenderStartup, init_mountain_pipeline)
-            .add_systems(
-                Render,
-                prepare_bind_group.in_set(RenderSystems::PrepareBindGroups),
-            );
-
-        let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
-        render_graph.add_node(MountainComputeLabel, MountainComputeNode::default());
-        render_graph.add_node_edge(
-            MountainComputeLabel,
-            bevy::render::graph::CameraDriverLabel,
-        );
-    }
-}
-
-// --- GPU pipeline ---
-
-#[derive(Resource)]
-struct MountainPipeline {
-    bind_group_layout: BindGroupLayoutDescriptor,
-    pipeline_id: CachedComputePipelineId,
-}
-
-fn init_mountain_pipeline(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    pipeline_cache: Res<PipelineCache>,
-) {
-    let bind_group_layout = BindGroupLayoutDescriptor::new(
-        "mountain_bg_bind_group_layout",
-        &BindGroupLayoutEntries::sequential(
-            ShaderStages::COMPUTE,
-            (
-                texture_storage_2d(TextureFormat::Rgba8Unorm, StorageTextureAccess::WriteOnly),
-                uniform_buffer::<MountainParams>(false),
-            ),
-        ),
-    );
-
-    let shader = asset_server.load("shaders/mountain_bg.wgsl");
-
-    let pipeline_id = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
-        layout: vec![bind_group_layout.clone()],
-        shader,
-        entry_point: Some(Cow::from("main")),
-        ..default()
-    });
-
-    commands.insert_resource(MountainPipeline {
-        bind_group_layout,
-        pipeline_id,
-    });
-}
-
-#[derive(Resource)]
-struct MountainBindGroup(BindGroup);
-
-fn prepare_bind_group(
-    mut commands: Commands,
-    pipeline: Res<MountainPipeline>,
-    mountain_image: Res<MountainImage>,
-    render_device: Res<RenderDevice>,
-    queue: Res<RenderQueue>,
-    params: Res<MountainParams>,
-    gpu_images: Res<RenderAssets<GpuImage>>,
-    pipeline_cache: Res<PipelineCache>,
-) {
-    let Some(gpu_image) = gpu_images.get(&mountain_image.0) else {
-        return;
-    };
-
-    let mut uniform_buffer = UniformBuffer::from(params.clone());
-    uniform_buffer.write_buffer(&render_device, &queue);
-
-    let bind_group = render_device.create_bind_group(
-        None,
-        &pipeline_cache.get_bind_group_layout(&pipeline.bind_group_layout),
-        &BindGroupEntries::sequential((&gpu_image.texture_view, &uniform_buffer)),
-    );
-
-    commands.insert_resource(MountainBindGroup(bind_group));
-}
-
-// --- Render graph node ---
-
-#[derive(Default)]
-struct MountainComputeNode;
-
-impl render_graph::Node for MountainComputeNode {
-    fn run(
-        &self,
-        _graph: &mut render_graph::RenderGraphContext,
-        render_context: &mut RenderContext,
-        world: &World,
-    ) -> Result<(), render_graph::NodeRunError> {
-        let Some(bind_group) = world.get_resource::<MountainBindGroup>() else {
-            return Ok(());
-        };
-        let Some(pipeline_resource) = world.get_resource::<MountainPipeline>() else {
-            return Ok(());
-        };
-        let pipeline_cache = world.resource::<PipelineCache>();
-
-        let Some(pipeline) =
-            pipeline_cache.get_compute_pipeline(pipeline_resource.pipeline_id)
-        else {
-            return Ok(());
-        };
-
-        let mut pass = render_context
-            .command_encoder()
-            .begin_compute_pass(&ComputePassDescriptor::default());
-
-        pass.set_bind_group(0, &bind_group.0, &[]);
-        pass.set_pipeline(pipeline);
-        pass.dispatch_workgroups(
-            (BG_WIDTH + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE,
-            (BG_HEIGHT + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE,
-            1,
-        );
-
-        Ok(())
+    for (mut tf, tile) in &mut tiles {
+        let total = tile.spacing * tile.count as f32;
+        let raw = tile.index as f32 * tile.spacing - cam_x * tile.factor;
+        // Center the wrapped range on the camera.
+        let wrapped = raw.rem_euclid(total) - total / 2.0;
+        tf.translation.x = cam_x + wrapped;
+        tf.translation.y = cam_y + tile.base_y;
     }
 }

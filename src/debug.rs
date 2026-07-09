@@ -106,7 +106,7 @@ fn toggle_debug_overlay(
                 parent.spawn((
                     DebugText,
                     Text::new("Loading..."),
-                    TextFont { font_size: 20.0, ..default() },
+                    TextFont { font_size: FontSize::Px(20.0), ..default() },
                     TextColor(Color::srgb(0.0, 1.0, 0.0)),
                 ));
             });
@@ -358,7 +358,7 @@ fn update_platform_labels(
         commands.spawn((
             PlatformDebugLabel,
             Text2d::new(label),
-            TextFont { font_size: 14.0, ..default() },
+            TextFont { font_size: FontSize::Px(14.0), ..default() },
             TextColor(label_color),
             Transform::from_xyz(px, tf.translation.y + size.0.y / 2.0 + 12.0, 90.0),
         ));
@@ -380,7 +380,7 @@ fn update_platform_labels(
             commands.spawn((
                 PlatformDebugLabel,
                 Text2d::new("BREAK"),
-                TextFont { font_size: 14.0, ..default() },
+                TextFont { font_size: FontSize::Px(14.0), ..default() },
                 TextColor(Color::srgb(1.0, 0.6, 0.2)),
                 Transform::from_xyz(px, tf.translation.y + 20.0, 90.0),
             ));

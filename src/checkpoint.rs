@@ -249,7 +249,7 @@ fn section_banner_tick(
             .with_children(|parent| {
                 parent.spawn((
                     Text::new(format!("SECTION {}!", banner.section + 1)),
-                    TextFont { font_size: 64.0, ..default() },
+                    TextFont { font_size: FontSize::Px(64.0), ..default() },
                     TextColor(Color::srgb(1.0, 0.9, 0.3)),
                 ));
             });

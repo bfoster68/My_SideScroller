@@ -149,7 +149,7 @@ fn enemy_player_collision(
                     timer: Timer::from_seconds(SCORE_POPUP_DURATION, TimerMode::Once),
                 },
                 Text2d::new(format!("+{}", kill_score)),
-                TextFont { font_size: 20.0, ..default() },
+                TextFont { font_size: FontSize::Px(20.0), ..default() },
                 TextColor(Color::srgb(1.0, 1.0, 0.3)),
                 Transform::from_xyz(death_pos.x, death_pos.y + 20.0, 5.0),
             ));
@@ -209,7 +209,7 @@ fn reset_combo_on_land(
             let multiplier = 1u32 << combo_power;
             commands.spawn((
                 Text2d::new(format!("x{} COMBO", multiplier)),
-                TextFont { font_size: 18.0, ..default() },
+                TextFont { font_size: FontSize::Px(18.0), ..default() },
                 TextColor(Color::srgb(1.0, 0.4, 0.2)),
                 Transform::from_xyz(
                     tf.translation.x,

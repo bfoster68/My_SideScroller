@@ -259,7 +259,7 @@ fn spawn_touch_button(
         .with_children(|btn| {
             btn.spawn((
                 Text::new(label),
-                TextFont { font_size, ..default() },
+                TextFont { font_size: FontSize::Px(font_size), ..default() },
                 TextColor(text_color),
                 Pickable::IGNORE,
             ));
