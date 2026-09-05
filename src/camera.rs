@@ -31,6 +31,7 @@ impl Plugin for CameraPlugin {
         app.init_resource::<ScreenShake>()
             .add_systems(Startup, spawn_camera)
             .add_systems(OnEnter(GameState::Playing), request_camera_snap)
+            .add_systems(OnExit(GameState::Playing), clear_hit_freeze)
             .add_systems(
                 Update,
                 (manage_hit_freeze, damage_triggers_shake, try_snap_camera, camera_follow)
@@ -104,6 +105,14 @@ fn manage_hit_freeze(
         // Restore speed if HitFreeze was removed externally (e.g. on death)
         time.set_relative_speed(1.0);
     }
+}
+
+/// Bug fix: `manage_hit_freeze` only runs in Playing, so leaving Playing mid-freeze
+/// (e.g. Escape right after taking a hit) left virtual time stuck at 2–5% for
+/// every menu and fade. Restore full speed and drop the freeze on exit.
+fn clear_hit_freeze(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
+    time.set_relative_speed(1.0);
+    commands.remove_resource::<HitFreeze>();
 }
 
 /// On any damage event, add trauma for screen shake.

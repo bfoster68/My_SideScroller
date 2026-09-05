@@ -18,14 +18,26 @@ pub struct CoinBob {
     pub phase: f32,
 }
 
+/// Gameplay-only clock driving coin/powerup bob animations.
+///
+/// Fix: `Time::elapsed_secs()` keeps advancing while paused (only the systems are
+/// gated), so on resume every bobbing pickup teleported to a new phase. This clock
+/// only ticks while Playing, so pausing freezes the bob in place.
+#[derive(Resource, Default)]
+pub struct BobClock(pub f32);
+
+fn tick_bob_clock(time: Res<Time>, mut clock: ResMut<BobClock>) {
+    clock.0 += time.delta_secs();
+}
+
 pub struct CollectiblesPlugin;
 
 impl Plugin for CollectiblesPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
+        app.init_resource::<BobClock>().add_systems(
             Update,
             (
-                coin_animate,
+                (tick_bob_clock, coin_animate).chain(),
                 coin_player_collision.after(PlayerMovementSet),
             )
                 .run_if(in_state(GameState::Playing)),
@@ -77,10 +89,10 @@ pub fn spawn_coin_on_moving(parent: &mut ChildSpawnerCommands, image: Handle<Ima
 
 /// Bob coins up/down and simulate spinning via X-scale oscillation.
 fn coin_animate(
-    time: Res<Time>,
+    clock: Res<BobClock>,
     mut query: Query<(&mut Transform, &CoinBob), With<Coin>>,
 ) {
-    let t = time.elapsed_secs();
+    let t = clock.0;
     for (mut transform, bob) in &mut query {
         // Vertical bob
         transform.translation.y =

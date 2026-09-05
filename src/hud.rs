@@ -115,8 +115,17 @@ impl Plugin for HudPlugin {
             // Game Over
             .add_systems(OnEnter(GameState::GameOver), spawn_game_over_overlay.after(HighScoreSet))
             .add_systems(OnExit(GameState::GameOver), despawn_all::<GameOverOverlay>)
-            // Mouse interaction for all menus
-            .add_systems(Update, mouse_menu_interaction);
+            // Mouse interaction for all menus.
+            // Bug fix: runs in PreUpdate after the per-frame GameInput reset
+            // (InputSet) and after UI focus has updated Interaction, so the click
+            // is guaranteed to be visible to state.rs's Update-time input handler
+            // instead of being nondeterministically wiped.
+            .add_systems(
+                PreUpdate,
+                mouse_menu_interaction
+                    .after(crate::input::InputSet)
+                    .after(bevy::ui::UiSystems::Focus),
+            );
     }
 }
 
@@ -155,19 +164,19 @@ fn spawn_hud(mut commands: Commands) {
                 row.spawn((
                     HealthText,
                     Text::new("Health: 3"),
-                    TextFont { font_size: 24.0, ..default() },
+                    TextFont { font_size: FontSize::Px(24.0), ..default() },
                     TextColor(Color::srgb(1.0, 0.3, 0.3)),
                 ));
                 row.spawn((
                     ScoreText,
                     Text::new("Score: 0"),
-                    TextFont { font_size: 24.0, ..default() },
+                    TextFont { font_size: FontSize::Px(24.0), ..default() },
                     TextColor(Color::srgb(1.0, 1.0, 1.0)),
                 ));
                 row.spawn((
                     CoinsText,
                     Text::new("Coins: 0"),
-                    TextFont { font_size: 24.0, ..default() },
+                    TextFont { font_size: FontSize::Px(24.0), ..default() },
                     TextColor(Color::srgb(1.0, 0.85, 0.0)),
                 ));
             });
@@ -176,7 +185,7 @@ fn spawn_hud(mut commands: Commands) {
             parent.spawn((
                 ComboText,
                 Text::new(""),
-                TextFont { font_size: 28.0, ..default() },
+                TextFont { font_size: FontSize::Px(28.0), ..default() },
                 TextColor(Color::srgb(1.0, 0.9, 0.2)),
                 Node {
                     align_self: AlignSelf::Center,
@@ -211,7 +220,7 @@ fn spawn_hud(mut commands: Commands) {
                         slot.spawn((
                             PowerupBarLabel(idx),
                             Text::new(label),
-                            TextFont { font_size: 11.0, ..default() },
+                            TextFont { font_size: FontSize::Px(11.0), ..default() },
                             TextColor(color),
                         ));
                         // Bar background
@@ -268,7 +277,9 @@ fn update_combo_text(
     };
 
     if combo.count > 0 && !combo.display_timer.is_finished() {
-        let multiplier = 2u32.pow(combo.count.min(MAX_COMBO_POWER));
+        // Bug fix: count is already incremented by the time the HUD reads it, so
+        // subtract 1 to match the multiplier that was actually awarded.
+        let multiplier = 2u32.pow(combo.count.saturating_sub(1).min(MAX_COMBO_POWER));
         **text = format!("x{}!", multiplier);
         // Fade out as timer progresses
         let alpha = combo.display_timer.fraction_remaining();
@@ -328,13 +339,15 @@ fn spawn_menu_overlay(
     mut commands: Commands,
     high_score: Res<HighScore>,
     mut menu_sel: ResMut<MenuSelection>,
+    save_cache: Res<crate::save::SaveSlotCache>,
 ) {
     menu_sel.index = 0;
     // No save/load on WASM (localStorage unreliable in iframes)
     #[cfg(target_arch = "wasm32")]
-    let has_saves = false;
+    let has_saves = { let _ = &save_cache; false };
+    // Cache is refreshed by SavePlugin on OnEnter(Menu); read it instead of disk.
     #[cfg(not(target_arch = "wasm32"))]
-    let has_saves = !crate::save::list_slots().is_empty();
+    let has_saves = !save_cache.slots.is_empty();
 
     commands
         .spawn((
@@ -354,14 +367,14 @@ fn spawn_menu_overlay(
             // Title
             parent.spawn((
                 Text::new("My Side-Scroller"),
-                TextFont { font_size: 48.0, ..default() },
+                TextFont { font_size: FontSize::Px(48.0), ..default() },
                 TextColor(COLOR_TITLE),
             ));
 
             if high_score.value > 0 {
                 parent.spawn((
                     Text::new(format!("High Score: {}", high_score.value)),
-                    TextFont { font_size: 28.0, ..default() },
+                    TextFont { font_size: FontSize::Px(28.0), ..default() },
                     TextColor(Color::srgb(1.0, 0.85, 0.0)),
                 ));
             }
@@ -376,7 +389,7 @@ fn spawn_menu_overlay(
                     MenuItem(idx),
                     Button,
                     Text::new("Load Game"),
-                    TextFont { font_size: 28.0, ..default() },
+                    TextFont { font_size: FontSize::Px(28.0), ..default() },
                     TextColor(COLOR_SELECTED),
                 ));
                 idx += 1;
@@ -388,7 +401,7 @@ fn spawn_menu_overlay(
                     MenuItem(idx),
                     Button,
                     Text::new(*label),
-                    TextFont { font_size: 28.0, ..default() },
+                    TextFont { font_size: FontSize::Px(28.0), ..default() },
                     TextColor(if idx == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
                 ));
                 idx += 1;
@@ -400,7 +413,7 @@ fn spawn_menu_overlay(
             // Controls hint
             parent.spawn((
                 Text::new("A/D: Move  |  Space: Jump  |  ESC: Pause"),
-                TextFont { font_size: 16.0, ..default() },
+                TextFont { font_size: FontSize::Px(16.0), ..default() },
                 TextColor(Color::srgb(0.4, 0.4, 0.4)),
             ));
         });
@@ -437,7 +450,7 @@ fn spawn_pause_overlay(mut commands: Commands) {
         .with_children(|parent| {
             parent.spawn((
                 Text::new("PAUSED"),
-                TextFont { font_size: 48.0, ..default() },
+                TextFont { font_size: FontSize::Px(48.0), ..default() },
                 TextColor(Color::srgb(1.0, 1.0, 1.0)),
             ));
 
@@ -453,7 +466,7 @@ fn spawn_pause_overlay(mut commands: Commands) {
                     PauseMenuItem(i),
                     Button,
                     Text::new(*label),
-                    TextFont { font_size: 24.0, ..default() },
+                    TextFont { font_size: FontSize::Px(24.0), ..default() },
                     TextColor(if i == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
                 ));
             }
@@ -476,6 +489,7 @@ fn update_pause_highlight(
 fn spawn_save_menu_overlay(
     mut commands: Commands,
     mode: Option<Res<crate::state::SaveMenuMode>>,
+    save_cache: Res<crate::save::SaveSlotCache>,
 ) {
     let mode = mode.map(|m| *m).unwrap_or(crate::state::SaveMenuMode::Load);
     let title = match mode {
@@ -483,7 +497,8 @@ fn spawn_save_menu_overlay(
         crate::state::SaveMenuMode::Save => "SAVE GAME",
     };
 
-    let slots = crate::save::list_slots();
+    // Cache is refreshed by SavePlugin on OnEnter(SaveMenu); read it instead of disk.
+    let slots = &save_cache.slots;
 
     commands
         .spawn((
@@ -502,7 +517,7 @@ fn spawn_save_menu_overlay(
         .with_children(|parent| {
             parent.spawn((
                 Text::new(title),
-                TextFont { font_size: 40.0, ..default() },
+                TextFont { font_size: FontSize::Px(40.0), ..default() },
                 TextColor(COLOR_TITLE),
             ));
 
@@ -511,7 +526,7 @@ fn spawn_save_menu_overlay(
             if slots.is_empty() && mode == crate::state::SaveMenuMode::Load {
                 parent.spawn((
                     Text::new("No saves found"),
-                    TextFont { font_size: 22.0, ..default() },
+                    TextFont { font_size: FontSize::Px(22.0), ..default() },
                     TextColor(Color::srgb(0.5, 0.5, 0.5)),
                 ));
             }
@@ -528,7 +543,7 @@ fn spawn_save_menu_overlay(
                     SaveMenuItem(i),
                     Button,
                     Text::new(label),
-                    TextFont { font_size: 22.0, ..default() },
+                    TextFont { font_size: FontSize::Px(22.0), ..default() },
                     TextColor(if i == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
                 ));
             }
@@ -540,7 +555,7 @@ fn spawn_save_menu_overlay(
                     SaveMenuItem(idx),
                     Button,
                     Text::new("+ New Save"),
-                    TextFont { font_size: 22.0, ..default() },
+                    TextFont { font_size: FontSize::Px(22.0), ..default() },
                     TextColor(if idx == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
                 ));
             }
@@ -553,23 +568,34 @@ fn spawn_save_menu_overlay(
             };
             parent.spawn((
                 Text::new(hint),
-                TextFont { font_size: 16.0, ..default() },
+                TextFont { font_size: FontSize::Px(16.0), ..default() },
                 TextColor(Color::srgb(0.4, 0.4, 0.4)),
             ));
         });
 }
 
 fn update_save_menu_display(
+    mut commands: Commands,
     save_sel: Res<crate::state::SaveMenuSelection>,
-    mut query: Query<(&SaveMenuItem, &mut TextColor, &mut Text)>,
-    mut cached_slots: Local<Option<Vec<crate::save::SlotEntry>>>,
+    save_cache: Res<crate::save::SaveSlotCache>,
+    mode: Option<Res<crate::state::SaveMenuMode>>,
+    mut query: Query<(Entity, &SaveMenuItem, &mut TextColor, &mut Text)>,
 ) {
-    // Cache slot data to avoid filesystem I/O every frame; refresh when selection changes
-    if save_sel.is_changed() || cached_slots.is_none() {
-        *cached_slots = Some(crate::save::list_slots());
-    }
-    let slots = cached_slots.as_ref().unwrap();
-    for (item, mut color, mut text) in &mut query {
+    // Slot list comes from the shared cache (refreshed by state.rs on any mutation).
+    let slots = &save_cache.slots;
+    let mode = mode.map(|m| *m).unwrap_or(crate::state::SaveMenuMode::Load);
+    // Rows spawned for slots that have since been deleted are orphaned and must
+    // be despawned, otherwise they linger as un-selectable ghost entries. In Save
+    // mode the row at index slots.len() is the legitimate "+ New Save" row.
+    let first_orphan = match mode {
+        crate::state::SaveMenuMode::Load => slots.len(),
+        crate::state::SaveMenuMode::Save => slots.len() + 1,
+    };
+    for (entity, item, mut color, mut text) in &mut query {
+        if item.0 >= first_orphan {
+            commands.entity(entity).despawn();
+            continue;
+        }
         let is_selected = item.0 == save_sel.index;
 
         if save_sel.confirm_delete && is_selected && item.0 < slots.len() {
@@ -615,7 +641,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
         .with_children(|parent| {
             parent.spawn((
                 Text::new("SETTINGS"),
-                TextFont { font_size: 48.0, ..default() },
+                TextFont { font_size: FontSize::Px(48.0), ..default() },
                 TextColor(COLOR_TITLE),
             ));
 
@@ -632,7 +658,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
                     SettingsItem(i),
                     Button,
                     Text::new(format!("{}: {}", label, volume_bar(*val))),
-                    TextFont { font_size: 24.0, ..default() },
+                    TextFont { font_size: FontSize::Px(24.0), ..default() },
                     TextColor(if i == 0 { COLOR_SELECTED } else { COLOR_UNSELECTED }),
                 ));
             }
@@ -643,7 +669,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
                 SettingsItem(3),
                 Button,
                 Text::new(format!("Resolution: {}", res_label)),
-                TextFont { font_size: 24.0, ..default() },
+                TextFont { font_size: FontSize::Px(24.0), ..default() },
                 TextColor(COLOR_UNSELECTED),
             ));
 
@@ -652,7 +678,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
                 SettingsItem(4),
                 Button,
                 Text::new(format!("Fullscreen: {}", if settings.fullscreen { "ON" } else { "OFF" })),
-                TextFont { font_size: 24.0, ..default() },
+                TextFont { font_size: FontSize::Px(24.0), ..default() },
                 TextColor(COLOR_UNSELECTED),
             ));
 
@@ -661,7 +687,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
                 SettingsItem(5),
                 Button,
                 Text::new("Back"),
-                TextFont { font_size: 24.0, ..default() },
+                TextFont { font_size: FontSize::Px(24.0), ..default() },
                 TextColor(COLOR_UNSELECTED),
             ));
 
@@ -669,7 +695,7 @@ fn spawn_settings_overlay(mut commands: Commands, settings: Res<GameSettings>) {
 
             parent.spawn((
                 Text::new("Up/Down: Select  |  Left/Right: Adjust  |  ESC: Back"),
-                TextFont { font_size: 16.0, ..default() },
+                TextFont { font_size: FontSize::Px(16.0), ..default() },
                 TextColor(Color::srgb(0.4, 0.4, 0.4)),
             ));
         });
@@ -743,23 +769,23 @@ fn spawn_game_over_overlay(
         .with_children(|parent| {
             parent.spawn((
                 Text::new("GAME OVER"),
-                TextFont { font_size: 48.0, ..default() },
+                TextFont { font_size: FontSize::Px(48.0), ..default() },
                 TextColor(Color::srgb(1.0, 0.2, 0.2)),
             ));
             parent.spawn((
                 Text::new(format!("Score: {}", score.value)),
-                TextFont { font_size: 28.0, ..default() },
+                TextFont { font_size: FontSize::Px(28.0), ..default() },
                 TextColor(Color::srgb(1.0, 1.0, 1.0)),
             ));
             parent.spawn((
                 Text::new(format!("High Score: {}", high_score.value)),
-                TextFont { font_size: 24.0, ..default() },
+                TextFont { font_size: FontSize::Px(24.0), ..default() },
                 TextColor(Color::srgb(1.0, 0.85, 0.0)),
             ));
             if new_high_score.is_some() {
                 parent.spawn((
                     Text::new("NEW HIGH SCORE!"),
-                    TextFont { font_size: 32.0, ..default() },
+                    TextFont { font_size: FontSize::Px(32.0), ..default() },
                     TextColor(Color::srgb(1.0, 1.0, 0.0)),
                 ));
             }
@@ -767,7 +793,7 @@ fn spawn_game_over_overlay(
                 GameOverRetry,
                 Button,
                 Text::new("Tap or Press SPACE to Retry"),
-                TextFont { font_size: 24.0, ..default() },
+                TextFont { font_size: FontSize::Px(24.0), ..default() },
                 TextColor(Color::srgb(0.8, 0.8, 0.8)),
             ));
         });

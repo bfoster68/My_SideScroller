@@ -64,7 +64,9 @@ impl Plugin for TouchPlugin {
             .init_resource::<TouchInputActive>()
             .add_systems(
                 PreUpdate,
-                process_touch_zones.before(crate::input::InputSet),
+                process_touch_zones
+                    .before(crate::input::InputSet)
+                    .after(bevy::input::InputSystems),
             )
             .add_systems(OnEnter(GameState::Playing), spawn_touch_overlay)
             .add_systems(OnExit(GameState::Playing), despawn_touch_overlay)
@@ -117,8 +119,8 @@ fn process_touch_zones(
                 || gp.just_pressed(GamepadButton::Start)
         })
     {
-        active.hide_timer.reset();
-        // Don't immediately hide — let the timer expire
+        // Keyboard/gamepad use means the player switched input method - hide the overlay.
+        active.active = false;
     }
 
     let Ok(window) = window_query.single() else {
@@ -259,7 +261,7 @@ fn spawn_touch_button(
         .with_children(|btn| {
             btn.spawn((
                 Text::new(label),
-                TextFont { font_size, ..default() },
+                TextFont { font_size: FontSize::Px(font_size), ..default() },
                 TextColor(text_color),
                 Pickable::IGNORE,
             ));

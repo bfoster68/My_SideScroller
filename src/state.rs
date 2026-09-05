@@ -148,7 +148,8 @@ fn handle_state_input(
     checkpoint: Res<CheckpointData>,
     mut window_query: Query<&mut Window>,
     high_score: Res<crate::highscore::HighScore>,
-    save_menu_mode: Option<Res<SaveMenuMode>>,
+    // Grouped into a tuple to stay within Bevy's 16-param system limit.
+    (save_menu_mode, mut save_cache): (Option<Res<SaveMenuMode>>, ResMut<crate::save::SaveSlotCache>),
 ) {
     // Don't process input while a transition is active
     if transition.is_some() {
@@ -159,8 +160,9 @@ fn handle_state_input(
         GameState::Menu => {
             #[cfg(target_arch = "wasm32")]
             let has_saves = false;
+            // Read the cached index rather than hitting disk every frame.
             #[cfg(not(target_arch = "wasm32"))]
-            let has_saves = !crate::save::list_slots().is_empty();
+            let has_saves = !save_cache.slots.is_empty();
             let count = if has_saves { 4 } else { 3 }; // Load/New/Settings/Quit or New/Settings/Quit
             if game_input.up_pressed {
                 menu_sel.index = if menu_sel.index == 0 { count - 1 } else { menu_sel.index - 1 };
@@ -325,9 +327,9 @@ fn handle_state_input(
                 }
             }
 
-            // Back: Escape or confirm on "Back" item
+            // Back: Escape/gamepad Start (pause_pressed) or confirm on "Back" item
             let back_index = count - 1; // 5
-            if keyboard.just_pressed(KeyCode::Escape)
+            if game_input.pause_pressed
                 || (game_input.confirm_pressed && settings_sel.index == back_index)
             {
                 // Save settings when leaving
@@ -341,12 +343,15 @@ fn handle_state_input(
             }
         }
         GameState::SaveMenu => {
-            let slots = crate::save::list_slots();
+            // Cached index (no per-frame disk I/O). Cloned so the cache can be
+            // refreshed below after a mutation; it holds at most MAX_SAVE_SLOTS entries.
+            let slots = save_cache.slots.clone();
             let mode = save_menu_mode.as_deref().copied().unwrap_or(SaveMenuMode::Load);
             // In Save mode, add one extra entry for "New Save"
             let count = if mode == SaveMenuMode::Save { slots.len() + 1 } else { slots.len() }.max(1);
 
-            if keyboard.just_pressed(KeyCode::Escape) {
+            // Back: Escape or gamepad Start
+            if game_input.pause_pressed {
                 if save_menu_sel.confirm_delete {
                     save_menu_sel.confirm_delete = false;
                 } else {
@@ -387,8 +392,10 @@ fn handle_state_input(
                     if let Some(slot) = slots.get(save_menu_sel.index) {
                         crate::save::delete_slot(slot.id);
                         save_menu_sel.confirm_delete = false;
+                        // Refresh the cache so the menu reflects the deletion immediately
+                        save_cache.refresh();
                         // Clamp index
-                        let new_slots = crate::save::list_slots();
+                        let new_slots = &save_cache.slots;
                         if save_menu_sel.index >= new_slots.len() && !new_slots.is_empty() {
                             save_menu_sel.index = new_slots.len() - 1;
                         } else if new_slots.is_empty() {
@@ -429,6 +436,8 @@ fn handle_state_input(
                                 let id = crate::save::create_slot(&slot_data);
                                 commands.insert_resource(crate::save::ActiveSlot(Some(id)));
                             }
+                            // Keep the cache in sync with the slot we just wrote
+                            save_cache.refresh();
                             commands.remove_resource::<SaveMenuMode>();
                             next_state.set(GameState::Paused);
                         }

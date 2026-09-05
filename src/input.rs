@@ -16,6 +16,7 @@ pub struct GameInput {
     pub down_pressed: bool,
     pub left_pressed: bool,
     pub right_pressed: bool,
+    pub down_held: bool,       // Down/S held or stick pushed down (drop-through)
 }
 
 /// Timer for analog stick menu navigation repeat.
@@ -56,7 +57,14 @@ impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GameInput>()
             .init_resource::<StickNavTimer>()
-            .add_systems(PreUpdate, update_game_input.in_set(InputSet));
+            .add_systems(
+                PreUpdate,
+                update_game_input
+                    .in_set(InputSet)
+                    // Run after Bevy has updated ButtonInput/Touches so presses
+                    // are never seen a frame late.
+                    .after(bevy::input::InputSystems),
+            );
     }
 }
 
@@ -85,6 +93,7 @@ fn update_game_input(
     input.confirm_pressed = keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space);
     input.up_pressed = keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW);
     input.down_pressed = keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS);
+    input.down_held = keyboard.pressed(KeyCode::ArrowDown) || keyboard.pressed(KeyCode::KeyS);
     input.left_pressed = keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyA);
     input.right_pressed = keyboard.just_pressed(KeyCode::ArrowRight) || keyboard.just_pressed(KeyCode::KeyD);
 
@@ -97,6 +106,11 @@ fn update_game_input(
             let sign = raw_x.signum();
             let rescaled = (raw_x.abs() - GAMEPAD_DEADZONE) / (1.0 - GAMEPAD_DEADZONE);
             input.move_x += sign * rescaled;
+        }
+        // Left stick pushed down (Bevy: up is positive) — used for drop-through.
+        let raw_y = gamepad.get(GamepadAxis::LeftStickY).unwrap_or(0.0);
+        if raw_y < -0.5 {
+            input.down_held = true;
         }
 
         // Buttons

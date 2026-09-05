@@ -3,8 +3,9 @@ name: Rust
 on:
   push:
     branches: [ "main" ]
+  # No base-branch filter: run CI on every pull request, including stacked
+  # PRs whose base is a feature branch rather than main.
   pull_request:
-    branches: [ "main" ]
 
 env:
   CARGO_TERM_COLOR: always

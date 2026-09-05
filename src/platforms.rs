@@ -59,7 +59,12 @@ pub struct SpringPlatform {
 pub struct CrumblingPlatform {
     pub state: CrumbleState,
     pub timer: Timer,
+    /// Resting X captured when shaking starts; the shake offsets from here.
+    pub base_x: f32,
 }
+
+/// Horizontal shake amplitude (px) for a crumbling platform in its warning phase.
+const CRUMBLE_SHAKE_AMPLITUDE: f32 = 3.0;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum CrumbleState {
@@ -110,16 +115,21 @@ pub fn update_crumbling_platforms(
                     if on_top {
                         crumble.state = CrumbleState::Shaking;
                         crumble.timer = Timer::from_seconds(CRUMBLE_WARN_TIME, TimerMode::Once);
+                        crumble.base_x = transform.translation.x;
                     }
                 }
             }
             CrumbleState::Shaking => {
                 crumble.timer.tick(time.delta());
-                let shake = (time.elapsed_secs() * 40.0).sin() * 2.0;
-                transform.translation.x += shake * time.delta_secs() * 10.0;
+                // Fix: set the shake offset absolutely from base_x. The old code
+                // accumulated `sin * dt`, which integrates the wave into a ~0.5px
+                // wobble that was effectively invisible.
+                transform.translation.x = crumble.base_x
+                    + (time.elapsed_secs() * 40.0).sin() * CRUMBLE_SHAKE_AMPLITUDE;
                 if crumble.timer.just_finished() {
                     crumble.state = CrumbleState::Falling;
                     crumble.timer = Timer::from_seconds(CRUMBLE_FALL_TIME, TimerMode::Once);
+                    transform.translation.x = crumble.base_x;
                 }
             }
             CrumbleState::Falling => {

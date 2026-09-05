@@ -28,6 +28,9 @@ mod state;
 mod touch;
 mod transition;
 
+#[cfg(test)]
+mod tests;
+
 use bevy::{prelude::*, window::WindowResolution};
 
 fn main() {

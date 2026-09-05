@@ -99,8 +99,22 @@ impl Plugin for CheckpointPlugin {
                 (check_checkpoint, check_section, section_banner_tick, lerp_sky_color)
                     .run_if(in_state(GameState::Playing)),
             )
-            .add_systems(OnEnter(GameState::Playing), reset_checkpoint_data.in_set(CheckpointResetSet));
+            .add_systems(OnEnter(GameState::Playing), reset_checkpoint_data.in_set(CheckpointResetSet))
+            .add_systems(OnExit(GameState::Playing), clear_section_banner);
     }
+}
+
+/// Bug fix: tear down any active section banner when leaving Playing. Otherwise
+/// the banner text floats over pause/game-over/menu screens and the frozen
+/// `SectionBanner` resource blocks every future banner in `check_section`.
+fn clear_section_banner(
+    mut commands: Commands,
+    banner_ui: Query<Entity, With<crate::hud::SectionBannerUi>>,
+) {
+    for entity in &banner_ui {
+        commands.entity(entity).despawn();
+    }
+    commands.remove_resource::<SectionBanner>();
 }
 
 /// Reset checkpoint data at start of a new game, unless resuming from checkpoint.
@@ -249,7 +263,7 @@ fn section_banner_tick(
             .with_children(|parent| {
                 parent.spawn((
                     Text::new(format!("SECTION {}!", banner.section + 1)),
-                    TextFont { font_size: 64.0, ..default() },
+                    TextFont { font_size: FontSize::Px(64.0), ..default() },
                     TextColor(Color::srgb(1.0, 0.9, 0.3)),
                 ));
             });

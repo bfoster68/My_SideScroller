@@ -60,6 +60,12 @@ impl Plugin for HealthPlugin {
                 Update,
                 (apply_damage, tick_knockback, tick_death_animation, update_death_fragments, tick_invincibility, flash_invincible)
                     .chain()
+                    // Must run AFTER player movement: apply_damage writes the
+                    // knockback impulse to Velocity but inserts the Knockback
+                    // marker via deferred commands. If it ran before player_input
+                    // in the same frame, player_input saw no Knockback yet and
+                    // overwrote the impulse to zero — so hits had no pushback.
+                    .after(crate::player::PlayerMovementSet)
                     .run_if(in_state(GameState::Playing)),
             );
     }
@@ -87,15 +93,22 @@ fn apply_damage(
         return;
     }
 
+    // `Invincible` is inserted via deferred Commands, so it isn't visible until
+    // next frame. Track locally so only ONE hit lands per frame even when several
+    // DamageEvents are queued at once (e.g. enemy body + projectile overlap).
+    let mut hit_this_frame = invincible.is_some();
+
     for event in damage_events.read() {
-        // Can't take damage while invincible or in god mode
-        if invincible.is_some() || god_mode.0 {
+        // Can't take damage while invincible, already hit this frame, or in god mode
+        if hit_this_frame || god_mode.0 {
             continue;
         }
 
         // Shield absorbs the hit
         if let Some(ref mut s) = shield {
-            s.hits_remaining -= 1;
+            hit_this_frame = true;
+            // Clamp so a second event can't drive this negative and re-fire the break burst
+            s.hits_remaining = (s.hits_remaining - 1).max(0);
             if s.hits_remaining <= 0 {
                 commands.entity(entity).remove::<Shield>();
                 // Gold particle burst when shield breaks
@@ -111,6 +124,7 @@ fn apply_damage(
         }
 
         health.current = (health.current - event.amount).max(0);
+        hit_this_frame = true;
 
         if health.current <= 0 {
             // Play death SFX (quieter than other effects)
@@ -180,7 +194,7 @@ fn tick_death_animation(
     mut query: Query<(Entity, &mut DeathTimer, &mut Transform, &mut Sprite), With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
-    let Ok((entity, mut death, mut transform, mut sprite)) = query.single_mut() else {
+    let Ok((entity, mut death, transform, mut sprite)) = query.single_mut() else {
         return;
     };
 

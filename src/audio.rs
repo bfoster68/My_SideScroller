@@ -58,18 +58,29 @@ pub struct AudioHandles {
     pub music: Option<Handle<AudioSource>>,
 }
 
+/// Marker for one-shot SFX entities. `base` is the per-sound volume (1.0 for
+/// plain `spawn_sfx`); the effective volume is `base * master * sfx`, applied by
+/// `apply_sfx_volume` once Bevy attaches the `AudioSink`.
+#[derive(Component)]
+pub struct Sfx {
+    pub base: f32,
+}
+
 /// Spawn a one-shot SFX that auto-despawns after playing.
 pub fn spawn_sfx(commands: &mut Commands, handle: &Handle<AudioSource>) {
+    // Bug fix: tag with Sfx so apply_sfx_volume scales it by master * sfx settings.
     commands.spawn((
         AudioPlayer::new(handle.clone()),
         PlaybackSettings {
             mode: PlaybackMode::Despawn,
             ..default()
         },
+        Sfx { base: 1.0 },
     ));
 }
 
-/// Spawn a one-shot SFX at a specific volume (0.0–1.0).
+/// Spawn a one-shot SFX at a specific volume (0.0–1.0), further scaled by
+/// the master and SFX volume settings.
 pub fn spawn_sfx_at_volume(commands: &mut Commands, handle: &Handle<AudioSource>, volume: f32) {
     commands.spawn((
         AudioPlayer::new(handle.clone()),
@@ -78,6 +89,7 @@ pub fn spawn_sfx_at_volume(commands: &mut Commands, handle: &Handle<AudioSource>
             volume: Volume::Linear(volume),
             ..default()
         },
+        Sfx { base: volume },
     ));
 }
 
@@ -89,14 +101,38 @@ impl Plugin for GameAudioPlugin {
             .init_resource::<AudioPrevGrounded>()
             .init_resource::<AudioPrevAirborne>()
             .init_resource::<AudioHandles>()
-            .add_systems(Startup, load_audio_assets)
+            .add_systems(Startup, load_audio_assets);
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_systems(Startup, log_audio_output_device);
+        app
             .add_systems(OnEnter(GameState::Playing), start_music)
-            .add_systems(OnExit(GameState::Playing), stop_music)
+            // Bug fix: stop music only when a run ends (Menu / GameOver), not on
+            // every exit from Playing — so pausing/opening Settings no longer
+            // restarts the track from the beginning.
+            .add_systems(OnEnter(GameState::Menu), stop_music)
+            .add_systems(OnEnter(GameState::GameOver), stop_music)
             .add_systems(
                 Update,
-                (play_jump_sfx, play_land_sfx, update_music_volume)
-                    .run_if(in_state(GameState::Playing)),
-            );
+                (play_jump_sfx, play_land_sfx).run_if(in_state(GameState::Playing)),
+            )
+            // Run in every state so volume changes from the Settings screen apply
+            // live, and so SFX spawned in any state get the configured volume.
+            .add_systems(Update, (update_music_volume, apply_sfx_volume));
+    }
+}
+
+/// Log which output device the OS default resolved to. Bevy opens the system
+/// default exactly once and never re-opens it, so if sound seems dead this is
+/// the first thing to check (e.g. a paired-but-idle Bluetooth headset).
+#[cfg(not(target_arch = "wasm32"))]
+fn log_audio_output_device() {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    match cpal::default_host().default_output_device() {
+        Some(device) => match device.description() {
+            Ok(desc) => info!("Audio output: {}", desc.name()),
+            Err(e) => warn!("Audio output: default device found but unnamed ({e})"),
+        },
+        None => warn!("Audio output: no default output device — game will be silent"),
     }
 }
 
@@ -219,5 +255,19 @@ fn update_music_volume(
     }
     for mut sink in &mut music_query {
         sink.set_volume(Volume::Linear(settings.effective_music_volume() * 0.4));
+    }
+}
+
+/// Bug fix: apply master * sfx volume to each newly started SFX. Bevy attaches
+/// `AudioSink` once playback begins, so `Added<AudioSink>` catches each sound
+/// exactly once.
+fn apply_sfx_volume(
+    settings: Res<GameSettings>,
+    mut sfx_query: Query<(&Sfx, &mut AudioSink), Added<AudioSink>>,
+) {
+    for (sfx, mut sink) in &mut sfx_query {
+        sink.set_volume(Volume::Linear(
+            sfx.base * settings.master_volume * settings.sfx_volume,
+        ));
     }
 }

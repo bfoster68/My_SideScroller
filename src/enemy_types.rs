@@ -56,6 +56,10 @@ pub enum ChargeState {
 #[derive(Component)]
 pub struct FlyingRangedEnemy;
 
+/// Seconds a charging enemy waits after recovering before it can detect the player again.
+/// (Local to this module so constants.rs doesn't need to change.)
+const CHARGING_COOLDOWN: f32 = 1.0;
+
 // ---------------------------------------------------------------------------
 // Spawn functions
 // ---------------------------------------------------------------------------
@@ -352,9 +356,27 @@ pub fn charging_enemy_behavior(
                 }
                 sprite.flip_x = patrol.direction < 0.0;
 
+                // Post-recovery cooldown: state_timer is set when leaving Recovering;
+                // the spawn-time 0s Once timer finishes on the first tick so initial
+                // detection is unaffected.
+                if !charger.state_timer.is_finished() {
+                    continue;
+                }
+
                 let dx = player_tf.translation.x - tf.translation.x;
                 let dy = (player_tf.translation.y - tf.translation.y).abs();
-                if dx.abs() < CHARGING_DETECT_RANGE && dy < CHARGING_ENEMY_HEIGHT * 2.0 {
+                // Only wind up if there is meaningful room to charge toward the player
+                // within the patrol bounds — otherwise the charge would be zero-length
+                // (enemies have no physics, so they must stay on the platform).
+                let room = if dx > 0.0 {
+                    patrol.right_bound - tf.translation.x
+                } else {
+                    tf.translation.x - patrol.left_bound
+                };
+                if dx.abs() < CHARGING_DETECT_RANGE
+                    && dy < CHARGING_ENEMY_HEIGHT * 2.0
+                    && room > CHARGING_ENEMY_WIDTH
+                {
                     charger.state = ChargeState::WindingUp;
                     charger.charge_direction = dx.signum();
                     charger.state_timer = Timer::from_seconds(CHARGING_WIND_TIME, TimerMode::Once);
@@ -385,6 +407,8 @@ pub fn charging_enemy_behavior(
                 sprite.color = Color::WHITE;
                 if charger.state_timer.is_finished() {
                     charger.state = ChargeState::Idle;
+                    // Cooldown before re-detecting so it doesn't immediately wind up again.
+                    charger.state_timer = Timer::from_seconds(CHARGING_COOLDOWN, TimerMode::Once);
                 }
             }
         }
@@ -407,6 +431,16 @@ pub fn flying_ranged_fire(
 
         if timer.timer.just_finished() {
             let pos = gtf.translation();
+
+            // Range gate (same as shooter_fire): don't fire from off-screen.
+            let to_player = Vec2::new(
+                player_tf.translation.x - pos.x,
+                player_tf.translation.y - pos.y,
+            );
+            if to_player.length() > SHOOTER_RANGE {
+                continue;
+            }
+
             let dx = (player_tf.translation.x - pos.x).clamp(-50.0, 50.0);
             let dir = Vec2::new(dx, -1.0).normalize();
 

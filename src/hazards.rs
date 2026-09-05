@@ -28,6 +28,8 @@ pub struct Lava;
 pub struct BoulderSpawner {
     pub timer: Timer,
     pub x: f32,
+    /// Top surface of the platform this spawner belongs to (where boulders land).
+    pub ground_y: f32,
     pub boulder_image: Handle<Image>,
     pub warning_image: Handle<Image>,
 }
@@ -36,6 +38,8 @@ pub struct BoulderSpawner {
 #[derive(Component)]
 pub struct FallingBoulder {
     pub velocity_y: f32,
+    /// Y of the surface this boulder lands on (copied from its spawner).
+    pub land_y: f32,
 }
 
 /// Warning indicator that appears before a boulder drops.
@@ -43,6 +47,8 @@ pub struct FallingBoulder {
 pub struct BoulderWarning {
     pub timer: Timer,
     pub x: f32,
+    /// Landing surface Y, forwarded to the boulder it spawns.
+    pub land_y: f32,
     pub boulder_image: Handle<Image>,
 }
 
@@ -234,17 +240,20 @@ fn lava_animate(time: Res<Time>, mut query: Query<&mut Sprite, With<Lava>>) {
 pub fn spawn_boulder_spawner(
     commands: &mut Commands,
     platform_x: f32,
-    _platform_y: f32,
+    platform_y: f32,
     boulder_image: Handle<Image>,
     warning_image: Handle<Image>,
 ) {
+    // Boulders land on the top surface of the spawner's platform.
+    let ground_y = platform_y + PLATFORM_HEIGHT / 2.0;
     commands.spawn((
         // Invisible entity — just a spawner marker
-        Transform::from_xyz(platform_x, 0.0, 0.0),
+        Transform::from_xyz(platform_x, ground_y, 0.0),
         Visibility::Hidden,
         BoulderSpawner {
             timer: Timer::from_seconds(BOULDER_SPAWN_INTERVAL, TimerMode::Repeating),
             x: platform_x,
+            ground_y,
             boulder_image,
             warning_image,
         },
@@ -270,8 +279,9 @@ fn boulder_spawner_system(
         spawner.timer.tick(time.delta());
 
         if spawner.timer.just_finished() {
-            // Spawn warning indicator first
-            let warning_y = GROUND_Y + GROUND_HEIGHT;
+            // Spawn warning indicator just above the landing surface of this
+            // spawner's platform (not the hard-coded ground line).
+            let warning_y = spawner.ground_y + 8.0;
             commands.spawn((
                 Sprite {
                     image: spawner.warning_image.clone(),
@@ -283,6 +293,7 @@ fn boulder_spawner_system(
                 BoulderWarning {
                     timer: Timer::from_seconds(BOULDER_WARNING_TIME, TimerMode::Once),
                     x: spawner.x,
+                    land_y: spawner.ground_y,
                     boulder_image: spawner.boulder_image.clone(),
                 },
             ));
@@ -318,7 +329,7 @@ fn boulder_warning_system(
                     ..default()
                 },
                 Transform::from_xyz(warning.x, spawn_y, BOULDER_Z),
-                FallingBoulder { velocity_y: 0.0 },
+                FallingBoulder { velocity_y: 0.0, land_y: warning.land_y },
             ));
 
             commands.entity(entity).despawn();
@@ -326,7 +337,7 @@ fn boulder_warning_system(
     }
 }
 
-/// Apply gravity to falling boulders and despawn when below fall limit.
+/// Apply gravity to falling boulders; shatter on landing, despawn if far below.
 fn boulder_movement(
     mut commands: Commands,
     time: Res<Time>,
@@ -340,6 +351,21 @@ fn boulder_movement(
         // Rotate for visual effect
         tf.rotation *= Quat::from_rotation_z(-3.0 * dt);
 
+        // Landed on the target platform: despawn with a small impact burst
+        // instead of sinking through the floor.
+        if tf.translation.y - BOULDER_SIZE / 2.0 <= boulder.land_y {
+            crate::particles::spawn_burst(
+                &mut commands,
+                Vec2::new(tf.translation.x, boulder.land_y),
+                8,
+                Color::srgb(0.55, 0.5, 0.45),
+                true,
+            );
+            commands.entity(entity).despawn();
+            continue;
+        }
+
+        // Safety net: despawn if it somehow falls far below the world
         if tf.translation.y < FALL_LIMIT - 100.0 {
             commands.entity(entity).despawn();
         }

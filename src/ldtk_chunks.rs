@@ -259,6 +259,11 @@ fn parse_intgrid_layer(
         Some(a) => a,
         None => return,
     };
+    // Guard against divide-by-zero below when __cWid is missing or malformed.
+    if c_wid <= 0 {
+        warn!("LDtk: IntGrid layer has invalid __cWid {c_wid}, skipping");
+        return;
+    }
 
     for (i, val) in csv.iter().enumerate() {
         let v = val.as_i64().unwrap_or(0) as i32;
@@ -389,18 +394,47 @@ pub fn select_chunk<'a>(
     pool: &'a ChunkPool,
     difficulty: f32,
     entry_y: f32,
-    max_y_delta: f32,
+    _max_y_delta: f32,
     section: u32,
     last_chunk_name: Option<&str>,
     rng: &mut impl rand::Rng,
 ) -> Option<&'a ChunkTemplate> {
     use rand::seq::SliceRandom;
 
+    // Fix: `t.entry_y` is chunk-local (bottom-up, 0..height_px) while `entry_y` is
+    // the generator's world-space frontier (`last_platform_y`), so comparing them
+    // directly was meaningless. Instead, reason in world space *after* alignment:
+    // the caller places the chunk at `base_y = entry_y - t.entry_y` so its entry
+    // always meets the current line, which makes the entry itself trivially
+    // reachable. What can go wrong is where the chunk *ends up*: its exit must
+    // stay inside the playable band the procedural generator uses
+    // (ground_surface + 60 ..= PLATFORM_CEILING_Y), and the chunk body must not
+    // be pushed down into the ground/death zone.
+    //
+    // Lower bound for `base_y` (chunk-local y=0, i.e. the chunk floor):
+    // `has_ground` chunks keep their ground tiles on the bottom row (local y≈8)
+    // with an EntryPoint around local y≈32, so aligning them to a low frontier
+    // legitimately lands `base_y` near the real ground line (GROUND_Y=-300).
+    // Allowing one ground-thickness below GROUND_Y lets those chunks sit their
+    // floor row on/just above the ground slab, while guaranteeing that even the
+    // lowest tile (bottom row spawned at GROUND_HEIGHT tall) never drops more
+    // than a tile below the slab bottom — well above FALL_LIMIT. Floating chunks
+    // have higher entry points, so they are naturally placed above this bound.
+    let ground_surface = GROUND_Y + GROUND_HEIGHT / 2.0;
+    let min_base_y = GROUND_Y - GROUND_HEIGHT;
+    let fits = |t: &ChunkTemplate| {
+        let base_y = entry_y - t.entry_y;
+        let exit_world = base_y + t.exit_y;
+        base_y >= min_base_y
+            && exit_world >= ground_surface + 60.0
+            && exit_world <= PLATFORM_CEILING_Y
+    };
+
     let candidates: Vec<&ChunkTemplate> = pool
         .templates
         .iter()
         .filter(|t| difficulty >= t.difficulty_min && difficulty <= t.difficulty_max)
-        .filter(|t| (t.entry_y - entry_y).abs() <= max_y_delta * 2.0)
+        .filter(|t| fits(t))
         // Section filter: chunk matches if it has no section preference or matches current
         .filter(|t| t.section.is_none() || t.section == Some(section % 4))
         // Avoid repeating the same chunk back-to-back
@@ -413,7 +447,7 @@ pub fn select_chunk<'a>(
             .templates
             .iter()
             .filter(|t| difficulty >= t.difficulty_min && difficulty <= t.difficulty_max)
-            .filter(|t| (t.entry_y - entry_y).abs() <= max_y_delta * 2.0)
+            .filter(|t| fits(t))
             .filter(|t| t.section.is_none() || t.section == Some(section % 4))
             .collect();
         return fallback.choose(rng).copied();
@@ -704,6 +738,7 @@ fn spawn_collision_runs(
                     commands.entity(e).insert(crate::level::CrumblingPlatform {
                         state: crate::level::CrumbleState::Idle,
                         timer: Timer::from_seconds(CRUMBLE_WARN_TIME, TimerMode::Once),
+                        base_x: 0.0, // captured when shaking starts
                     });
                 }
                 CollisionType::Spring => {

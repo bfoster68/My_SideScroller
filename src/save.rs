@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::audio::GameSettings;
 use crate::checkpoint::CheckpointData;
 use crate::highscore::HighScore;
+use crate::state::GameState;
 
 // Storage keys
 const SETTINGS_KEY: &str = "my_sidescroller_settings";
@@ -13,6 +14,10 @@ const SLOT_PREFIX: &str = "my_sidescroller_slot_";
 // Native file paths
 const SETTINGS_FILE: &str = "settings.json";
 const SAVES_DIR: &str = "saves";
+
+/// Maximum number of save slots kept on disk. Each New Game autosaves into a
+/// fresh slot, so without a cap the list would grow without bound.
+pub const MAX_SAVE_SLOTS: usize = 10;
 
 /// Global settings — persisted independently from save slots.
 #[derive(Serialize, Deserialize)]
@@ -60,6 +65,23 @@ pub struct ActiveSlot(pub Option<u32>);
 #[derive(Resource)]
 pub struct ResumeFromCheckpoint;
 
+/// In-memory copy of the slot index so menus don't hit disk every frame.
+/// Refreshed on entering Menu/SaveMenu and after any slot mutation.
+#[derive(Resource, Default)]
+pub struct SaveSlotCache {
+    pub slots: Vec<SlotEntry>,
+}
+
+impl SaveSlotCache {
+    pub fn refresh(&mut self) {
+        self.slots = list_slots();
+    }
+}
+
+fn refresh_save_slot_cache(mut cache: ResMut<SaveSlotCache>) {
+    cache.refresh();
+}
+
 /// Legacy save format for migration.
 #[derive(Serialize, Deserialize, Default)]
 struct LegacySaveData {
@@ -80,7 +102,10 @@ pub struct SavePlugin;
 impl Plugin for SavePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ActiveSlot>()
-            .add_systems(Startup, load_settings_data);
+            .init_resource::<SaveSlotCache>()
+            .add_systems(Startup, load_settings_data)
+            .add_systems(OnEnter(GameState::Menu), refresh_save_slot_cache)
+            .add_systems(OnEnter(GameState::SaveMenu), refresh_save_slot_cache);
     }
 }
 
@@ -296,6 +321,17 @@ pub fn delete_slot(id: u32) {
 /// Create a new save slot, returning its ID.
 pub fn create_slot(data: &SlotData) -> u32 {
     let mut index = load_slot_index();
+
+    // Enforce the slot cap: evict the oldest slots (lowest id, since ids are
+    // monotonically increasing) until there is room for the new one.
+    while index.slots.len() >= MAX_SAVE_SLOTS {
+        let Some(oldest_id) = index.slots.iter().map(|s| s.id).min() else { break };
+        let key = format!("{}{}", SLOT_PREFIX, oldest_id);
+        let path = format!("{}/slot_{}.json", SAVES_DIR, oldest_id);
+        delete_file(&key, &path);
+        index.slots.retain(|s| s.id != oldest_id);
+    }
+
     let id = index.next_id;
     index.next_id += 1;
     index.slots.push(SlotEntry {
@@ -365,33 +401,9 @@ fn save_slot_index(index: &SlotIndex) {
 fn current_timestamp() -> String {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        // Simple timestamp using system time
-        use std::time::SystemTime;
-        let secs = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        // Format as readable date
-        // Proper date calculation accounting for leap years
-        let mut days = (secs / 86400) as i64;
-        let hour = (secs % 86400) / 3600;
-        let minute = (secs % 3600) / 60;
-
-        let mut year = 1970i64;
-        loop {
-            let days_in_year = if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { 366 } else { 365 };
-            if days < days_in_year { break; }
-            days -= days_in_year;
-            year += 1;
-        }
-        let is_leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-        let month_days = [31, if is_leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-        let mut month = 0usize;
-        for (i, &md) in month_days.iter().enumerate() {
-            if days < md as i64 { month = i; break; }
-            days -= md as i64;
-        }
-        format!("{:04}-{:02}-{:02} {:02}:{:02}", year, month + 1, days + 1, hour, minute)
+        // Local time (the previous hand-rolled math produced UTC, so saves
+        // showed the wrong hour). Same "YYYY-MM-DD HH:MM" layout as before.
+        chrono::Local::now().format("%Y-%m-%d %H:%M").to_string()
     }
     #[cfg(target_arch = "wasm32")]
     {
