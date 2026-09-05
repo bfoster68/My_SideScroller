@@ -101,7 +101,10 @@ impl Plugin for GameAudioPlugin {
             .init_resource::<AudioPrevGrounded>()
             .init_resource::<AudioPrevAirborne>()
             .init_resource::<AudioHandles>()
-            .add_systems(Startup, load_audio_assets)
+            .add_systems(Startup, load_audio_assets);
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_systems(Startup, log_audio_output_device);
+        app
             .add_systems(OnEnter(GameState::Playing), start_music)
             // Bug fix: stop music only when a run ends (Menu / GameOver), not on
             // every exit from Playing — so pausing/opening Settings no longer
@@ -115,6 +118,21 @@ impl Plugin for GameAudioPlugin {
             // Run in every state so volume changes from the Settings screen apply
             // live, and so SFX spawned in any state get the configured volume.
             .add_systems(Update, (update_music_volume, apply_sfx_volume));
+    }
+}
+
+/// Log which output device the OS default resolved to. Bevy opens the system
+/// default exactly once and never re-opens it, so if sound seems dead this is
+/// the first thing to check (e.g. a paired-but-idle Bluetooth headset).
+#[cfg(not(target_arch = "wasm32"))]
+fn log_audio_output_device() {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    match cpal::default_host().default_output_device() {
+        Some(device) => match device.description() {
+            Ok(desc) => info!("Audio output: {}", desc.name()),
+            Err(e) => warn!("Audio output: default device found but unnamed ({e})"),
+        },
+        None => warn!("Audio output: no default output device — game will be silent"),
     }
 }
 
