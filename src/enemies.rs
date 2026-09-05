@@ -5,7 +5,7 @@ use crate::camera::HitFreeze;
 use crate::constants::*;
 use crate::health::{DamageEvent, Invincible};
 use crate::particles::spawn_burst;
-use crate::player::{Grounded, Player, PlayerMovementSet, Score, Velocity};
+use crate::player::{Grounded, JumpHeld, Player, PlayerMovementSet, Score, Velocity};
 use crate::spatial::SpatialGrids;
 use crate::state::GameState;
 
@@ -83,7 +83,14 @@ impl Plugin for EnemiesPlugin {
 fn enemy_player_collision(
     mut commands: Commands,
     mut player_query: Query<
-        (&Transform, &mut Velocity, Option<&Invincible>, Option<&crate::health::DeathTimer>),
+        (
+            &Transform,
+            &mut Velocity,
+            &mut Grounded,
+            &mut JumpHeld,
+            Option<&Invincible>,
+            Option<&crate::health::DeathTimer>,
+        ),
         With<Player>,
     >,
     enemy_query: Query<(&GlobalTransform, &Sprite), (With<Enemy>, Without<Projectile>)>,
@@ -92,8 +99,13 @@ fn enemy_player_collision(
     mut score: ResMut<Score>,
     mut combo: ResMut<ComboTracker>,
     audio_handles: Option<Res<AudioHandles>>,
+    // Last frame's player feet Y — lets the stomp check be swept rather than
+    // instantaneous, so a fast fall can't skip the narrow stomp band.
+    mut prev_bottom: Local<Option<f32>>,
 ) {
-    let Ok((player_tf, mut player_vel, invincible, death)) = player_query.single_mut() else {
+    let Ok((player_tf, mut player_vel, mut grounded, mut jump_held, invincible, death)) =
+        player_query.single_mut()
+    else {
         return;
     };
     if death.is_some() {
@@ -102,7 +114,12 @@ fn enemy_player_collision(
 
     let player_half_w = PLAYER_WIDTH / 2.0;
     let player_half_h = PLAYER_HEIGHT / 2.0;
+    let player_bottom = player_tf.translation.y - player_half_h;
     let check_radius = player_half_w + ENEMY_WIDTH;
+
+    // Once we've stomped this frame, never also take contact damage from an
+    // adjacent enemy in the same frame (multi-stomp is still allowed).
+    let mut stomped_this_frame = false;
 
     for &(enemy_entity, _) in grids.enemies.query_nearby(player_tf.translation.x, check_radius) {
         let Ok((enemy_gtf, enemy_sprite)) = enemy_query.get(enemy_entity) else { continue; };
@@ -118,13 +135,20 @@ fn enemy_player_collision(
             continue;
         }
 
-        let player_bottom = player_tf.translation.y - player_half_h;
         let stomp_zone =
             enemy_pos.y + enemy_half_h * (1.0 - 2.0 * ENEMY_STOMP_THRESHOLD);
 
-        let is_stomp = player_vel.0.y < 0.0 && player_bottom >= stomp_zone;
+        // Swept stomp check: use LAST frame's feet position (falling back to the
+        // current one on the first frame) so a fast fall that jumps straight past
+        // the stomp band still counts. Detect descent by position as well as
+        // velocity, since landing on a platform the same frame zeroes vel.y.
+        let was_above = prev_bottom.map_or(player_bottom, |p| p) >= stomp_zone;
+        let descending =
+            player_vel.0.y < 0.0 || prev_bottom.map_or(false, |p| p > player_bottom);
+        let is_stomp = descending && was_above;
 
         if is_stomp {
+            stomped_this_frame = true;
             let death_pos = Vec2::new(enemy_pos.x, enemy_pos.y);
 
             let multiplier = 2u32.pow(combo.count.min(MAX_COMBO_POWER));
@@ -134,6 +158,10 @@ fn enemy_player_collision(
 
             commands.entity(enemy_entity).despawn();
             player_vel.0.y = ENEMY_STOMP_BOUNCE;
+            // Leave the ground so gravity/apply_velocity don't snap the bounce
+            // away, and drop any held jump so the variable-jump cut can't clip it.
+            grounded.on_ground = false;
+            jump_held.0 = false;
             score.value += kill_score;
 
             spawn_burst(
@@ -158,7 +186,7 @@ fn enemy_player_collision(
                 timer: Timer::from_seconds(STOMP_FREEZE_DURATION, TimerMode::Once),
                 time_scale: STOMP_FREEZE_SCALE,
             });
-        } else if invincible.is_none() {
+        } else if invincible.is_none() && !stomped_this_frame {
             let enemy_pos_2d = Vec2::new(enemy_pos.x, enemy_pos.y);
             damage_events.write(DamageEvent {
                 amount: 1,
@@ -177,6 +205,9 @@ fn enemy_player_collision(
             break;
         }
     }
+
+    // Remember this frame's feet position for next frame's swept stomp check.
+    *prev_bottom = Some(player_bottom);
 }
 
 /// Update floating score popups — rise, fade, and despawn.

@@ -259,6 +259,11 @@ fn parse_intgrid_layer(
         Some(a) => a,
         None => return,
     };
+    // Guard against divide-by-zero below when __cWid is missing or malformed.
+    if c_wid <= 0 {
+        warn!("LDtk: IntGrid layer has invalid __cWid {c_wid}, skipping");
+        return;
+    }
 
     for (i, val) in csv.iter().enumerate() {
         let v = val.as_i64().unwrap_or(0) as i32;

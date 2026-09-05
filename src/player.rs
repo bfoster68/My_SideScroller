@@ -180,6 +180,12 @@ fn player_input(
     if standing.on_ice && grounded.on_ground {
         let blend = ICE_FRICTION_MULTIPLIER * 3.0 * time.delta_secs();
         velocity.0.x = velocity.0.x + (target_vx - velocity.0.x) * blend.min(1.0);
+    } else if knockback.is_some() {
+        // Preserve the knockback impulse: ease toward the (dampened) input
+        // instead of overwriting the pushback every frame, otherwise the hit
+        // has no horizontal effect and the player re-touches the enemy.
+        let blend = 6.0 * time.delta_secs();
+        velocity.0.x += (target_vx - velocity.0.x) * blend.min(1.0);
     } else {
         velocity.0.x = target_vx;
     }
@@ -190,38 +196,48 @@ fn player_input(
     } else {
         MAX_JUMPS
     };
+    // If a triple-jump power-up expired mid-air, don't keep the extra jump.
+    jump_counter.jumps_remaining = jump_counter.jumps_remaining.min(max_jumps);
 
-    // Spring bounce: auto-launch when landing on a spring platform
-    if standing.on_spring && grounded.on_ground && velocity.0.y <= 0.0 {
-        velocity.0.y = JUMP_FORCE * standing.spring_multiplier;
-        grounded.on_ground = false;
-        jump_held.0 = true;
-        // Don't consume a jump — spring gives a free bounce
-    }
-
-    // Coyote time — grace period after leaving a platform
+    // Coyote time — grace period after leaving a platform. This runs BEFORE
+    // the spring check so that landing on a spring still refills your jumps.
     if grounded.on_ground {
         grounded.coyote_timer = COYOTE_TIME;
         jump_counter.jumps_remaining = max_jumps;
     } else {
         grounded.coyote_timer -= time.delta_secs();
-        // If we just left the ground without jumping, consume one jump
-        // so coyote time doesn't grant an extra jump on top of double jump.
+        // Walked off a ledge without jumping: that counts as the first jump,
+        // so coyote time can't grant a bonus jump on top of the double jump.
         if jump_counter.jumps_remaining == max_jumps {
             jump_counter.jumps_remaining = max_jumps.saturating_sub(1);
         }
     }
 
+    // Spring bounce: auto-launch when landing on a spring platform. It's a
+    // free bounce: it doesn't consume a jump, and it must NOT arm the
+    // short-hop cut (that only applies to real button-driven jumps), or
+    // releasing Jump afterwards would clip the bounce to a short hop.
+    if standing.on_spring && grounded.on_ground && velocity.0.y <= 0.0 {
+        velocity.0.y = JUMP_FORCE * standing.spring_multiplier;
+        grounded.on_ground = false;
+        jump_held.0 = false;
+    }
+
     let can_jump =
         grounded.on_ground || grounded.coyote_timer > 0.0 || jump_counter.jumps_remaining > 0;
 
-    // Jump initiation
-    if can_jump && game_input.jump_pressed {
+    // Jump initiation. Holding Down suppresses the jump so that Down+Jump can
+    // drop through a one-way platform instead of launching upward.
+    if can_jump && game_input.jump_pressed && !game_input.down_held {
         let is_ground_jump = grounded.on_ground || grounded.coyote_timer > 0.0;
 
         if is_ground_jump {
-            // First jump: full force
+            // First jump: full force. Set the remaining count absolutely so a
+            // coyote jump (where leaving the ledge already charged one jump)
+            // still leaves the full set of air jumps — otherwise walking off
+            // a ledge and jumping ate the double jump.
             velocity.0.y = JUMP_FORCE;
+            jump_counter.jumps_remaining = max_jumps.saturating_sub(1);
         } else {
             // Air jump: momentum-based — stronger if used while still rising,
             // weaker if used while falling. Rewards good timing.
@@ -233,14 +249,13 @@ fn player_input(
                 + t * (crate::constants::DOUBLE_JUMP_MAX_RATIO - crate::constants::DOUBLE_JUMP_MIN_RATIO);
             // Cancel downward momentum but don't boost upward momentum
             velocity.0.y = (JUMP_FORCE * ratio).max(0.0);
+            // Consume one air jump
+            jump_counter.jumps_remaining = jump_counter.jumps_remaining.saturating_sub(1);
         }
 
         grounded.coyote_timer = 0.0;
         grounded.on_ground = false;
         jump_held.0 = true;
-
-        // Consume a jump
-        jump_counter.jumps_remaining = jump_counter.jumps_remaining.saturating_sub(1);
     }
 
     // Variable jump height — release early for a short hop
@@ -265,6 +280,9 @@ fn apply_gravity(
 
     if !grounded.on_ground {
         velocity.0.y += GRAVITY * time.delta_secs();
+        // Terminal velocity: without a cap a long fall moves far enough per
+        // frame to tunnel through a platform or skip an enemy's stomp zone.
+        velocity.0.y = velocity.0.y.max(-TERMINAL_VELOCITY);
     }
 }
 
@@ -335,82 +353,98 @@ fn apply_velocity(
         }
     }
 
-    // --- Vertical pass ---
+    // --- Vertical pass (swept) ---
+    // Remember where the feet/head were BEFORE integrating so we can detect
+    // crossing a surface this frame. Comparing only post-integration positions
+    // meant a fast fall could skip the tiny landing window entirely (one-way
+    // platforms had a 4px window, so they were nearly impossible to land on)
+    // and a rising player could get snapped on TOP of a platform it was
+    // passing through from below.
+    let prev_bottom = transform.translation.y - player_half_h;
+    let prev_top = transform.translation.y + player_half_h;
     transform.translation.y += velocity.0.y * time.delta_secs();
 
     grounded.on_ground = false;
     let mut riding_velocity = Vec2::ZERO;
-    // Player is pressing down — used for drop-through on one-way platforms
-    let pressing_down = game_input.down_pressed || game_input.move_x < -0.8; // down key or stick down
+    // Drop through a one-way platform by holding Down and pressing Jump.
+    // (Uses the real down axis — the old check misread "moving left" as down.)
+    let drop_through = game_input.down_held && game_input.jump_pressed;
+    // Feet may sit slightly above the surface (a platform descending under
+    // the player) or slightly below it (overshoot) and still count as "on it".
+    const SURFACE_SLOP: f32 = 8.0;
+    const GROUND_EPS: f32 = 6.0;
 
     for (plat_tf, plat_size, plat_vel, one_way, ice, conveyor, spring) in &platform_query {
         let plat_half_w = plat_size.0.x / 2.0;
         let plat_half_h = plat_size.0.y / 2.0;
+        let plat_top = plat_tf.translation.y + plat_half_h;
+        let plat_bottom = plat_tf.translation.y - plat_half_h;
 
         let overlap_x = (player_half_w + plat_half_w)
             - (transform.translation.x - plat_tf.translation.x).abs();
-        let overlap_y = (player_half_h + plat_half_h)
-            - (transform.translation.y - plat_tf.translation.y).abs();
+        if overlap_x <= 0.0 {
+            continue;
+        }
 
-        // One-way platform: only collide when landing from above, skip if pressing down+jump
+        let bottom_now = transform.translation.y - player_half_h;
+        let top_now = transform.translation.y + player_half_h;
+        // Feet were at/above the surface last frame (slop covers a rising platform).
+        let was_above = prev_bottom >= plat_top - SURFACE_SLOP;
+        // Head was at/below the underside last frame.
+        let was_below = prev_top <= plat_bottom + SURFACE_SLOP;
+
+        // One-way platforms only catch you from above, and never while dropping through.
         if one_way.is_some() {
-            let player_bottom = transform.translation.y - player_half_h;
-            let plat_top = plat_tf.translation.y + plat_half_h;
-            // Skip if player center is below the platform top, or pressing down
-            if player_bottom < plat_top - 4.0 || (pressing_down && game_input.jump_pressed) {
+            if drop_through && was_above && bottom_now <= plat_top + GROUND_EPS {
+                // Dropping through the platform we're standing on: push the
+                // feet clearly below the surface so the swept check won't
+                // re-catch us next frame, and make sure we head downward.
+                transform.translation.y = plat_top - (SURFACE_SLOP + 1.0) + player_half_h;
+                velocity.0.y = velocity.0.y.min(0.0);
+                continue;
+            }
+            if !was_above || drop_through {
                 continue;
             }
         }
 
-        // Use a small epsilon so the player stays grounded when sitting
-        // exactly on top of a platform (overlap_y == 0.0 after snap).
-        if overlap_x > 0.0 && overlap_y >= -1.5 {
-            if overlap_y <= 0.0 && transform.translation.y > plat_tf.translation.y {
-                // Resting exactly on top — just mark grounded, no position correction.
-                grounded.on_ground = true;
-                if let Some(pv) = plat_vel {
-                    riding_velocity = pv.0;
-                }
-                // Track special platform types
-                if ice.is_some() { standing.on_ice = true; }
-                if let Some(conv) = conveyor { standing.conveyor_speed = conv.speed; }
-                if let Some(sp) = spring {
-                    standing.on_spring = true;
-                    standing.spring_multiplier = sp.force_multiplier;
-                }
-            } else if overlap_y > 0.0 && transform.translation.y > plat_tf.translation.y {
-                // Landing on top — snap to surface and carry platform velocity
-                transform.translation.y =
-                    plat_tf.translation.y + plat_half_h + player_half_h;
-                velocity.0.y = 0.0;
-                grounded.on_ground = true;
-                if let Some(pv) = plat_vel {
-                    riding_velocity = pv.0;
-                }
-                // Track special platform types
-                if ice.is_some() { standing.on_ice = true; }
-                if let Some(conv) = conveyor { standing.conveyor_speed = conv.speed; }
-                if let Some(sp) = spring {
-                    standing.on_spring = true;
-                    standing.spring_multiplier = sp.force_multiplier;
-                }
-            } else if overlap_y > 0.0 && one_way.is_none() {
-                // Bonking head on bottom (not on one-way platforms)
-                transform.translation.y =
-                    plat_tf.translation.y - plat_half_h - player_half_h;
-                velocity.0.y = 0.0;
+        if velocity.0.y <= 0.0 && was_above && bottom_now <= plat_top + GROUND_EPS {
+            // Landing / resting: always snap the feet to the surface and stop
+            // falling. Snapping every frame is also what carries the player on a
+            // moving platform (both rising and descending), so no extra vertical
+            // "ride" offset is needed — adding one on top of the snap left the
+            // player hovering a frame above a rising platform.
+            transform.translation.y = plat_top + player_half_h;
+            velocity.0.y = 0.0;
+            grounded.on_ground = true;
+            if let Some(pv) = plat_vel {
+                riding_velocity = pv.0;
             }
+            // Track special platform types
+            if ice.is_some() { standing.on_ice = true; }
+            if let Some(conv) = conveyor { standing.conveyor_speed = conv.speed; }
+            if let Some(sp) = spring {
+                standing.on_spring = true;
+                standing.spring_multiplier = sp.force_multiplier;
+            }
+        } else if velocity.0.y > 0.0
+            && was_below
+            && top_now >= plat_bottom - GROUND_EPS
+            && one_way.is_none()
+        {
+            // Head bonk on the underside of a solid platform (direction-gated so
+            // a fast riser can't be resolved as a landing on top).
+            transform.translation.y = plat_bottom - player_half_h;
+            velocity.0.y = 0.0;
         }
     }
 
-    // Carry the player along with the moving platform (both axes)
+    // Carry the player horizontally with a moving platform / conveyor.
+    // Vertical carry is handled by the landing snap above.
     if grounded.on_ground {
         let dt = time.delta_secs();
         if riding_velocity.x.abs() > 0.0 {
             transform.translation.x += riding_velocity.x * dt;
-        }
-        if riding_velocity.y.abs() > 0.0 {
-            transform.translation.y += riding_velocity.y * dt;
         }
         // Apply conveyor push
         if standing.conveyor_speed.abs() > 0.0 {
@@ -589,7 +623,6 @@ fn restore_player_visibility(mut query: Query<&mut Sprite, With<Player>>) {
 /// Level cleanup (chunk_tracker, difficulty, entity despawn) is handled
 /// by reset_level_if_needed in level.rs.
 fn reset_score_on_play(
-    mut commands: Commands,
     mut score: ResMut<Score>,
     mut coins: ResMut<Coins>,
     checkpoint: Res<CheckpointData>,
@@ -629,8 +662,11 @@ fn reset_score_on_play(
             jump_counter.jumps_remaining = MAX_JUMPS;
         }
 
-        // Consume the resume marker
-        commands.remove_resource::<ResumeFromCheckpoint>();
+        // NOTE: the ResumeFromCheckpoint marker is deliberately NOT consumed
+        // here. Other OnEnter(Playing) systems (checkpoint + level reset) run
+        // after this one and also need to see it; removing it here made those
+        // see a fresh start (regenerating terrain from spawn on every Load).
+        // It's cleared on OnExit(Playing) in level.rs instead.
     } else {
         // Fresh start
         score.value = 0;

@@ -103,7 +103,19 @@ impl Plugin for LevelPlugin {
                 .in_set(LevelResetSet)
                 .after(crate::player::PlayResetSet)
                 .after(crate::checkpoint::CheckpointResetSet));
+
+        // The resume marker must survive the whole OnEnter(Playing) reset chain
+        // (player, checkpoint, AND level all read it). Consuming it inside one of
+        // those systems is racy — deferred commands flush between ordered systems,
+        // so later readers saw it as already gone and fell back to a fresh start.
+        // Instead it's cleared when leaving Playing, after every reader has run.
+        app.add_systems(OnExit(GameState::Playing), clear_resume_marker);
     }
+}
+
+/// Drop the one-shot resume marker once a run has started (or ended).
+fn clear_resume_marker(mut commands: Commands) {
+    commands.remove_resource::<ResumeFromCheckpoint>();
 }
 
 #[cfg(debug_assertions)]

@@ -115,8 +115,17 @@ impl Plugin for HudPlugin {
             // Game Over
             .add_systems(OnEnter(GameState::GameOver), spawn_game_over_overlay.after(HighScoreSet))
             .add_systems(OnExit(GameState::GameOver), despawn_all::<GameOverOverlay>)
-            // Mouse interaction for all menus
-            .add_systems(Update, mouse_menu_interaction);
+            // Mouse interaction for all menus.
+            // Bug fix: runs in PreUpdate after the per-frame GameInput reset
+            // (InputSet) and after UI focus has updated Interaction, so the click
+            // is guaranteed to be visible to state.rs's Update-time input handler
+            // instead of being nondeterministically wiped.
+            .add_systems(
+                PreUpdate,
+                mouse_menu_interaction
+                    .after(crate::input::InputSet)
+                    .after(bevy::ui::UiSystems::Focus),
+            );
     }
 }
 
@@ -268,7 +277,9 @@ fn update_combo_text(
     };
 
     if combo.count > 0 && !combo.display_timer.is_finished() {
-        let multiplier = 2u32.pow(combo.count.min(MAX_COMBO_POWER));
+        // Bug fix: count is already incremented by the time the HUD reads it, so
+        // subtract 1 to match the multiplier that was actually awarded.
+        let multiplier = 2u32.pow(combo.count.saturating_sub(1).min(MAX_COMBO_POWER));
         **text = format!("x{}!", multiplier);
         // Fade out as timer progresses
         let alpha = combo.display_timer.fraction_remaining();

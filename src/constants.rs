@@ -1,6 +1,9 @@
 // Player
 pub const PLAYER_SPEED: f32 = 300.0;
 pub const GRAVITY: f32 = -800.0;
+// Cap fall speed so a long drop can't skip past a platform (or an enemy's
+// stomp zone) in a single frame.
+pub const TERMINAL_VELOCITY: f32 = 1200.0;
 pub const JUMP_FORCE: f32 = 500.0;
 pub const JUMP_FORCE_MIN: f32 = 250.0; // Short hop when tapping
 pub const DOUBLE_JUMP_MAX_RATIO: f32 = 0.75; // Best case: 75% of full jump (used while rising)
