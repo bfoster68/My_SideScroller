@@ -259,6 +259,12 @@ pub(crate) fn generate_chunks(
 
                 tracker.rightmost_platform_x = offset_x + chunk_width;
                 tracker.last_platform_y = base_y + chunk_exit_y;
+                // Fix: keep the generation frontier inside the same playable band the
+                // procedural generator clamps to, so a chunk exit can't push it out.
+                let ground_surface = GROUND_Y + GROUND_HEIGHT / 2.0;
+                tracker.last_platform_y = tracker
+                    .last_platform_y
+                    .clamp(ground_surface + 60.0, PLATFORM_CEILING_Y);
                 tracker.last_ldtk_chunk_x = offset_x;
                 chunk_pool.last_placed = Some(chunk_name);
 
@@ -459,6 +465,7 @@ pub(crate) fn generate_chunks(
             commands.entity(plat_entity).insert(CrumblingPlatform {
                 state: CrumbleState::Idle,
                 timer: Timer::from_seconds(CRUMBLE_WARN_TIME, TimerMode::Once),
+                base_x: 0.0, // captured when shaking starts
             });
             // Only coins on crumbling platforms
             if rng.gen_bool(coin_chance) {

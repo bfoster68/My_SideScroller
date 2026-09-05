@@ -116,11 +116,12 @@ pub fn spawn_powerup(
 // ---------------------------------------------------------------------------
 
 /// Bob power-ups up and down (like coins).
+/// Fix: driven by the gameplay-only BobClock so pausing doesn't advance the phase.
 fn powerup_bob_animate(
-    time: Res<Time>,
+    clock: Res<crate::collectibles::BobClock>,
     mut query: Query<(&mut Transform, &PowerupBob), With<PowerupKind>>,
 ) {
-    let t = time.elapsed_secs();
+    let t = clock.0;
     for (mut tf, bob) in &mut query {
         tf.translation.y =
             bob.base_y + (t * POWERUP_BOB_SPEED + bob.phase).sin() * POWERUP_BOB_AMPLITUDE;

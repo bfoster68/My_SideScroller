@@ -87,7 +87,7 @@ fn spawn_player(app: &mut App, x: f32, y: f32, vy: f32, on_ground: bool) {
         Transform::from_xyz(x, y, 1.0),
         Player,
         Velocity(Vec2::new(0.0, vy)),
-        Grounded { on_ground, coyote_timer: 0.0 },
+        Grounded { on_ground, coyote_timer: 0.0, jump_buffer: 0.0 },
         JumpCounter { jumps_remaining: MAX_JUMPS },
         JumpHeld(false),
         Health::default(),
@@ -716,6 +716,44 @@ fn knockback_pushes_player_away_from_enemy() {
         "knockback should push the player away from the enemy: x went {start_x} -> {}",
         p.pos.x
     );
+}
+
+/// BUG: there was no jump buffering — pressing Jump a couple of frames before
+/// landing was silently discarded. A press just before touchdown must jump on landing.
+#[test]
+fn jump_pressed_just_before_landing_is_buffered() {
+    let mut app = make_app();
+    spawn_ground(&mut app, 0.0, 0.0, 2000.0);
+    let rest_y = plat_top(0.0) + PLAYER_HEIGHT / 2.0;
+    spawn_player(&mut app, 0.0, 300.0, 0.0, false);
+    set_jumps(&mut app, 0); // no air jumps: the press can only count on landing
+
+    // Fall until we're a couple of frames from the surface, still airborne.
+    let mut guard = 0;
+    loop {
+        let p = player(&mut app);
+        if !p.on_ground && p.pos.y <= rest_y + 25.0 {
+            break;
+        }
+        step(&mut app, 1);
+        guard += 1;
+        assert!(guard < 400, "never approached the ground: {:?}", player(&mut app));
+    }
+    assert!(!player(&mut app).on_ground, "should still be airborne when pressing");
+
+    // Press Jump early (before touchdown), then let go.
+    set_input(&mut app, |gi| gi.jump_pressed = true);
+    step(&mut app, 1);
+    clear_input(&mut app);
+
+    // Within a few frames we land and the buffered press must fire a jump.
+    step(&mut app, 10);
+    let p = player(&mut app);
+    assert!(
+        !p.on_ground && p.vel.y > 0.0,
+        "buffered jump should fire on landing (airborne, rising), got {p:?}"
+    );
+    assert_eq!(p.jumps, MAX_JUMPS - 1, "the buffered jump is a ground jump");
 }
 
 /// BUG: releasing Jump right after a stomp clipped the bounce to a short hop

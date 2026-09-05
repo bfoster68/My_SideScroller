@@ -339,13 +339,15 @@ fn spawn_menu_overlay(
     mut commands: Commands,
     high_score: Res<HighScore>,
     mut menu_sel: ResMut<MenuSelection>,
+    save_cache: Res<crate::save::SaveSlotCache>,
 ) {
     menu_sel.index = 0;
     // No save/load on WASM (localStorage unreliable in iframes)
     #[cfg(target_arch = "wasm32")]
-    let has_saves = false;
+    let has_saves = { let _ = &save_cache; false };
+    // Cache is refreshed by SavePlugin on OnEnter(Menu); read it instead of disk.
     #[cfg(not(target_arch = "wasm32"))]
-    let has_saves = !crate::save::list_slots().is_empty();
+    let has_saves = !save_cache.slots.is_empty();
 
     commands
         .spawn((
@@ -487,6 +489,7 @@ fn update_pause_highlight(
 fn spawn_save_menu_overlay(
     mut commands: Commands,
     mode: Option<Res<crate::state::SaveMenuMode>>,
+    save_cache: Res<crate::save::SaveSlotCache>,
 ) {
     let mode = mode.map(|m| *m).unwrap_or(crate::state::SaveMenuMode::Load);
     let title = match mode {
@@ -494,7 +497,8 @@ fn spawn_save_menu_overlay(
         crate::state::SaveMenuMode::Save => "SAVE GAME",
     };
 
-    let slots = crate::save::list_slots();
+    // Cache is refreshed by SavePlugin on OnEnter(SaveMenu); read it instead of disk.
+    let slots = &save_cache.slots;
 
     commands
         .spawn((
@@ -571,16 +575,27 @@ fn spawn_save_menu_overlay(
 }
 
 fn update_save_menu_display(
+    mut commands: Commands,
     save_sel: Res<crate::state::SaveMenuSelection>,
-    mut query: Query<(&SaveMenuItem, &mut TextColor, &mut Text)>,
-    mut cached_slots: Local<Option<Vec<crate::save::SlotEntry>>>,
+    save_cache: Res<crate::save::SaveSlotCache>,
+    mode: Option<Res<crate::state::SaveMenuMode>>,
+    mut query: Query<(Entity, &SaveMenuItem, &mut TextColor, &mut Text)>,
 ) {
-    // Cache slot data to avoid filesystem I/O every frame; refresh when selection changes
-    if save_sel.is_changed() || cached_slots.is_none() {
-        *cached_slots = Some(crate::save::list_slots());
-    }
-    let slots = cached_slots.as_ref().unwrap();
-    for (item, mut color, mut text) in &mut query {
+    // Slot list comes from the shared cache (refreshed by state.rs on any mutation).
+    let slots = &save_cache.slots;
+    let mode = mode.map(|m| *m).unwrap_or(crate::state::SaveMenuMode::Load);
+    // Rows spawned for slots that have since been deleted are orphaned and must
+    // be despawned, otherwise they linger as un-selectable ghost entries. In Save
+    // mode the row at index slots.len() is the legitimate "+ New Save" row.
+    let first_orphan = match mode {
+        crate::state::SaveMenuMode::Load => slots.len(),
+        crate::state::SaveMenuMode::Save => slots.len() + 1,
+    };
+    for (entity, item, mut color, mut text) in &mut query {
+        if item.0 >= first_orphan {
+            commands.entity(entity).despawn();
+            continue;
+        }
         let is_selected = item.0 == save_sel.index;
 
         if save_sel.confirm_delete && is_selected && item.0 < slots.len() {

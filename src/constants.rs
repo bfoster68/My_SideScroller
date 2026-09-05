@@ -96,6 +96,8 @@ pub const SHAKE_TRAUMA_ON_HIT: f32 = 0.5;
 
 // Coyote time
 pub const COYOTE_TIME: f32 = 0.1;
+// Jump buffering: a Jump press this long before landing still fires on touchdown.
+pub const JUMP_BUFFER_TIME: f32 = 0.12;
 
 // Health
 pub const MAX_HEALTH: i32 = 3;

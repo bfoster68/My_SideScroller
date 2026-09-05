@@ -6,7 +6,9 @@ use crate::collectibles::Coin;
 use crate::constants::*;
 use crate::enemies::{Enemy, Projectile};
 use crate::hazards::{BoulderSpawner, FallingBoulder, Lava, Saw, Spike, TimedTrap};
-use crate::player::{Player, PlayerMovementSet, Score};
+#[cfg(debug_assertions)]
+use crate::player::Player;
+use crate::player::{PlayerMovementSet, Score};
 use crate::powerups::PowerupKind;
 use crate::save::ResumeFromCheckpoint;
 use crate::state::GameState;

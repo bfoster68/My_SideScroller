@@ -33,6 +33,8 @@ pub struct Velocity(pub Vec2);
 pub struct Grounded {
     pub on_ground: bool,
     pub coyote_timer: f32,
+    /// Seconds remaining on a buffered Jump press (fires on the next landing).
+    pub jump_buffer: f32,
 }
 
 /// Tracks jump count for double-jump support.
@@ -113,6 +115,7 @@ fn spawn_player_if_missing(
             Grounded {
                 on_ground: true,
                 coyote_timer: 0.0,
+                jump_buffer: 0.0,
             },
             JumpCounter {
                 jumps_remaining: MAX_JUMPS,
@@ -199,6 +202,16 @@ fn player_input(
     // If a triple-jump power-up expired mid-air, don't keep the extra jump.
     jump_counter.jumps_remaining = jump_counter.jumps_remaining.min(max_jumps);
 
+    // Jump buffering — the mirror of coyote time: remember a Jump press for a
+    // short window so pressing a few frames before landing still jumps on
+    // touchdown instead of being silently dropped. Holding Down doesn't
+    // buffer (Down+Jump is the drop-through gesture).
+    if game_input.jump_pressed && !game_input.down_held {
+        grounded.jump_buffer = JUMP_BUFFER_TIME;
+    } else {
+        grounded.jump_buffer = (grounded.jump_buffer - time.delta_secs()).max(0.0);
+    }
+
     // Coyote time — grace period after leaving a platform. This runs BEFORE
     // the spring check so that landing on a spring still refills your jumps.
     if grounded.on_ground {
@@ -226,9 +239,11 @@ fn player_input(
     let can_jump =
         grounded.on_ground || grounded.coyote_timer > 0.0 || jump_counter.jumps_remaining > 0;
 
-    // Jump initiation. Holding Down suppresses the jump so that Down+Jump can
-    // drop through a one-way platform instead of launching upward.
-    if can_jump && game_input.jump_pressed && !game_input.down_held {
+    // Jump initiation, driven by the buffer so an early press counts on
+    // landing. Holding Down suppresses the jump so that Down+Jump can drop
+    // through a one-way platform instead of launching upward.
+    if can_jump && grounded.jump_buffer > 0.0 && !game_input.down_held {
+        grounded.jump_buffer = 0.0; // consumed
         let is_ground_jump = grounded.on_ground || grounded.coyote_timer > 0.0;
 
         if is_ground_jump {
